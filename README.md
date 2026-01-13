@@ -3,8 +3,7 @@
 
 - Curso de [Imagina Formación](https://imaginaformacion.com/).
 - Formador: [Kevin Mamaqi Kapllani](https://www.linkedin.com/in/kevinmamaqi/).
-- Repo: [https://github.com/kevinmamaqi/curso-ddd-hexagonal-node](https://github.com/kevinmamaqi/curso-ddd-hexagonal-node).
-- Temario oficial 2026: [NUEVO_TEMARIO.md](NUEVO_TEMARIO.md).
+- Repo: [https://github.com/kevinmamaqi/curso-ddd-2026](https://github.com/kevinmamaqi/curso-ddd-2026).
 
 ---
 
@@ -45,7 +44,7 @@ Este curso en línea se enfoca en el diseño y desarrollo de aplicaciones web us
 - Equipo con permisos suficientes de instalación, mínimo 8GB de RAM, 20GB de espacio libre y conexión estable a Internet.
 - Tener Zoom de escritorio configurado (micrófono, auriculares/cámara y permisos para compartir pantalla).
 
-> El temario completo está en `NUEVO_TEMARIO.md`.
+> El temario y la planificación están integrados en las sesiones del repositorio.
 
 ## 🗓️ Horario del curso (2026)
 

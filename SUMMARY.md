@@ -1,7 +1,6 @@
 # Sumario
 
 * [Introducción](README.md)
-* [Temario 2026](NUEVO_TEMARIO.md)
 
 * **Sesión 01 – Fundamentos (Martes 27-ene-2026)**
   * [00 · Objetivos](curso/dia-01/00-objetivos.md)
