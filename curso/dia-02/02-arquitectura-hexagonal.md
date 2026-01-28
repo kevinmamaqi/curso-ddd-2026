@@ -32,14 +32,14 @@ flowchart LR
 
   %% Ports Layer
   subgraph Ports ["⚙️ Puertos (Interfaces)"]
-    P1["InventoryRepositoryPort"]
-    P2["MessagingPort"]
+    P1["RepositoryPort"]
+    P2["EventPublisherPort"]
   end
 
   %% Adapters Layer
   subgraph Adapters ["🔌 Adaptadores"]
     A1["Postgres Adapter"]
-    A2["RabbitMQ Adapter"]
+    A2["RabbitMQ Adapter (events)"]
     A3["HTTP Adapter (Fastify)"]
   end
 
@@ -98,155 +98,130 @@ Regla práctica: si una clase “no compila” sin un framework (Fastify/Prisma)
 
 ## 6. Ejemplo práctico: arrancando un servicio hexagonal
 
-A continuación un skeleton de inventory-service que ya respeta ports & adapters:
+Durante la clase, usaremos un mini‑dominio “similar” al proyecto (reservar stock), pero **no** el mismo código: crearemos durante la sesión un mini‑proyecto en `curso/dia-02/ejercicios` con el **mismo stack del repo** (Node 20 + TypeScript + Fastify + Vitest).
 
 ```text
-project/services/inventory-service/
+curso/dia-02/ejercicios/
 ├── src/
-│   ├── domain/
-│   │   ├── model/
-│   │   │   └── ProductInventory.ts
-│   │   └── ports/
-│   │       ├── InventoryRepositoryPort.ts
-│   │       └── MessagingPort.ts
-│   ├── application/
-│   │   └── use-cases/
-│   │       └── ReserveStockUseCase.ts
-│   ├── infrastructure/
-│   │   ├── http/
-│   │   │   └── routes.ts
-│   │   ├── postgres/
-│   │   │   └── InventoryRepositoryPostgres.ts
-│   │   └── rabbitmq/
-│   │       └── RabbitMessagingAdapter.ts
-│   └── main.ts
-└── tsconfig.json
+│   ├── domain/                 # core: invariantes y reglas
+│   ├── application/            # core: casos de uso + puertos
+│   ├── infrastructure/         # adapters: HTTP, in-memory, etc.
+│   └── main.ts                 # bootstrap + wiring (Fastify)
+└── test/
 ```
 
-### 5.1 Definiendo un puerto
+### 6.1 Localiza el “hexágono” en el código (mini-lab, 10 min)
 
-```typescript
-// src/domain/ports/InventoryRepositoryPort.ts
-import { ProductInventory } from '../model/ProductInventory';
+Con el árbol anterior, responde:
 
-export interface InventoryRepositoryPort {
-  findBySku(sku: string): Promise<ProductInventory | null>;
-  save(inventory: ProductInventory): Promise<void>;
+1. ¿Qué ficheros pertenecen al **core** (dominio + aplicación)?
+2. ¿Cuáles son adaptadores de **entrada** (driving) y cuáles de **salida** (driven)?
+3. ¿Qué dependencias técnicas quedan “fuera” del core (HTTP server, almacenamiento en memoria, etc.)?
+
+Pista rápida (para orientarte):
+
+- Dominio: `curso/dia-02/ejercicios/src/domain/BookStock.ts`
+- Caso de uso: `curso/dia-02/ejercicios/src/application/use-cases/ReserveCopiesUseCase.ts`
+- Puertos: `curso/dia-02/ejercicios/src/application/ports/*`
+- Entrada (HTTP): `curso/dia-02/ejercicios/src/main.ts` (Fastify)
+- Salida (repo in-memory): `curso/dia-02/ejercicios/src/infrastructure/persistence/InMemoryBookStockRepository.ts`
+- Salida (event publisher in-memory): `curso/dia-02/ejercicios/src/infrastructure/events/InMemoryEventPublisher.ts`
+
+### 6.2 Definiendo un puerto (salida)
+
+En el mini‑dominio, el repositorio es un puerto de salida (persistencia). El contrato lo **consume** el caso de uso y lo **implementa** la infraestructura:
+
+```ts
+// curso/dia-02/ejercicios/src/application/ports/BookStockRepositoryPort.ts (skeleton)
+export interface BookStockRepositoryPort {
+  getByBookId(bookId: BookId): Promise<BookStock | null>;
+  save(stock: BookStock): Promise<void>;
 }
 ```
 
-### 5.2 Implementando un adapter Postgres
+### 6.3 Implementando un adaptador (salida)
 
-```typescript
-// src/infrastructure/postgres/InventoryRepositoryPostgres.ts
-import { InventoryRepositoryPort } from '../../domain/ports/InventoryRepositoryPort';
-import { ProductInventory } from '../../domain/model/ProductInventory';
-import { prisma } from '../prisma';
+En clase empezamos con un adaptador **in-memory** (rápido y sin infraestructura).
 
-export class InventoryRepositoryPostgres implements InventoryRepositoryPort {
-  async findBySku(sku: string): Promise<ProductInventory | null> {
-    const row = await prisma.inventory.findUnique({ where: { sku } });
-    return row
-      ? new ProductInventory(row.sku, row.available)
-      : null;
-  }
+```ts
+// curso/dia-02/ejercicios/src/infrastructure/persistence/InMemoryBookStockRepository.ts (skeleton)
+export class InMemoryBookStockRepository implements BookStockRepositoryPort {
+  // TODO: estructura interna (Map, etc.)
+  async getByBookId(bookId: BookId): Promise<BookStock | null> { /* TODO */ }
+  async save(stock: BookStock): Promise<void> { /* TODO */ }
+}
+```
 
-  async save(inventory: ProductInventory): Promise<void> {
-    await prisma.inventory.upsert({
-      where: { sku: inventory.sku },
-      update: { available: inventory.available },
-      create: { sku: inventory.sku, available: inventory.available },
-    });
+### 6.4 Wiring (manual) en `main.ts`
+
+```ts
+// curso/dia-02/ejercicios/src/main.ts (idea)
+const stockRepo = new InMemoryBookStockRepository();
+const events = new InMemoryEventPublisher();
+const reserveCopiesUseCase = new ReserveCopiesUseCase(stockRepo, events);
+```
+
+### 6.5 Caso de uso (aplicación) + adaptador HTTP (entrada)
+
+Caso de uso: orquesta puertos + ejecuta reglas del dominio.
+
+```ts
+// curso/dia-02/ejercicios/src/application/use-cases/ReserveCopiesUseCase.ts (skeleton)
+export class ReserveCopiesUseCase {
+  constructor(
+    private readonly stockRepo: BookStockRepositoryPort,
+    private readonly events: EventPublisherPort
+  ) {}
+
+  async execute(command: { bookId: string; qty: number; reservationId: string }): Promise<void> {
+    // TODO: validar invariantes (VO), cargar agregado, ejecutar regla, persistir, publicar evento
   }
 }
 ```
 
-### 5.3 Contenedor de inyección (awilix)
+Adaptador HTTP: valida “forma”, traduce a comando y delega en el caso de uso.
 
-```typescript
-// src/application/container.ts
-
-/**
- * Configuración del contenedor de inyección de dependencias
- * usando Awilix. Aquí definimos cómo se construyen y resuelven
- * las diferentes piezas de nuestra aplicación.
- */
-
-import { createContainer, asClass } from 'awilix';
-
-// Adaptador que implementa el puerto de persistencia en Postgres
-import { InventoryRepositoryPostgres } from '../infrastructure/postgres/InventoryRepositoryPostgres';
-
-// Caso de uso que encapsula la lógica de reservar stock
-import { ReserveStockUseCase } from './use-cases/ReserveStockUseCase';
-
-// Creamos una instancia del contenedor de Awilix
-export const container = createContainer({
-  // Modo de inyección: CLASSIC utiliza constructor injection
-  injectionMode: 'CLASSIC'
-});
-
-container.register({
-  // Registro del repositorio de inventario:
-  // - Clave 'inventoryRepo' será la que use ReserveStockUseCase
-  // - asClass indica que Awilix instanciará la clase
-  // - scoped(): se crea una nueva instancia por resolución
-  inventoryRepo: asClass(InventoryRepositoryPostgres).scoped(),
-
-  // Registro del caso de uso:
-  // - Clave 'reserveStockUseCase' para resolverlo en las rutas o tests
-  // - Se inyectará el inventoryRepo automáticamente al constructor
-  reserveStockUseCase: asClass(ReserveStockUseCase).scoped(),
+```ts
+// curso/dia-02/ejercicios/src/main.ts (idea)
+// POST /book-stock/:bookId/reserve { qty, reservationId }
+app.post("/book-stock/:bookId/reserve", async (req, reply) => {
+  // TODO: validar forma (body/params), delegar en use case, mapear error → status
+  return reply.status(204).send();
 });
 ```
 
-### 5.4 Use Case y ruta HTTP
+### 6.6 Transfer al proyecto (últimos 30–45 min)
 
-```typescript
-// src/application/use-cases/ReserveStockUseCase.ts
-import { InventoryRepositoryPort } from '../../domain/ports/InventoryRepositoryPort';
+Una vez dominado el mini‑dominio, mapea 1:1 al proyecto:
 
-export class ReserveStockUseCase {
-  constructor(private readonly repo: InventoryRepositoryPort) {}
+- `BookId` → `SKU`
+- `BookStock` → `ProductInventory`
+- `ReserveCopiesUseCase` → `ReserveInventoryUseCase`
+- repo in‑memory → repo Postgres (Prisma)
+- publisher in‑memory → RabbitMQ adapter
+- wiring manual → Awilix (DI)
 
-  async execute(sku: string, qty: number): Promise<void> {
-    const inv = await this.repo.findBySku(sku);
-    if (!inv) throw new Error('Product not found');
-    inv.reserve(qty);
-    await this.repo.save(inv);
-  }
-}
-```
+Puntos de entrada del proyecto:
 
-```typescript
-// src/infrastructure/http/routes.ts
-import { FastifyInstance } from 'fastify';
-import { container } from '../../application/container';
-import { ReserveStockUseCase } from '../../application/use-cases/ReserveStockUseCase';
+- `project/services/inventory-service/src/infrastructure/http/ProductInventoryRouter.ts`
+- `project/services/inventory-service/src/application/ReserveInventoryUseCase.ts`
+- `project/services/inventory-service/src/domain/value-objects/SKU.ts`
 
-export async function registerRoutes(app: FastifyInstance) {
-  const useCase = container.resolve<ReserveStockUseCase>('reserveStockUseCase');
-
-  app.post('/inventory/:sku/reserve', async (req, reply) => {
-    await useCase.execute(req.params.sku, req.body.qty);
-    reply.status(204).send();
-  });
-}
-```
 ---
 
 ## 7. Convirtiendo microservicios a arquitectura hexagonal (guía práctica)
 
 Un patrón común en equipos Node es partir de un servicio “framework‑first” (controladores grandes + repositorios mezclados) y evolucionar hacia un core estable. Un camino seguro:
 
-1. **Identifica el caso de uso principal** (p. ej. `ReserveStock`) y escribe su intención en 1 frase.
-2. **Extrae el dominio**: entidades/VO con invariantes (sin Fastify/Prisma/Rabbit).
-3. **Define puertos** desde el dominio o aplicación:
-   - Salida: `InventoryRepositoryPort`, `EventPublisherPort`.
-   - Entrada: un `UseCase` (o un *application service*) invocable desde HTTP/consumidores.
+1. **Identifica el caso de uso principal** (p. ej. `ReserveCopies`) y escribe su intención en 1 frase.
+2. **Extrae el dominio**: entidades/VO con invariantes (sin HTTP/DB/broker).
+3. **Define puertos** desde el core:
+   - Salida (persistencia): `*RepositoryPort`.
+   - Salida (eventos): `*EventsPort` / `EventPublisherPort`.
+   - Entrada: el propio `UseCase` invocable desde HTTP/consumidores.
 4. **Crea adaptadores finos**:
    - HTTP: valida/parsea, delega al Use Case, traduce errores a HTTP.
-   - DB: implementa `InventoryRepositoryPort` con Prisma/Postgres.
+   - DB: implementa el `*RepositoryPort` con (Prisma/Postgres o lo que toque).
    - Mensajería: publica/consume eventos; añade idempotencia y *retry*.
 5. **Introduce DI** (Awilix) y controla el *scope*:
    - Cliente DB como singleton; repositorios por request/scope.
@@ -282,27 +257,14 @@ Para encapsular reglas e invariantes, reducir duplicidad de lógica y hacer que 
 
 ### 9.3 Creando nuestro primer Domain Object en un proyecto Node bajo un modelo de arquitectura hexagonal
 
-Ejemplo (inventario): un `ProductInventory` con métodos intencionales (`reserve`, `release`, `replenish`) y un `Quantity` como value object que protege invariantes.
+Ejemplo (biblioteca): un `BookStock` con métodos intencionales (`reserve`, `release`, `replenish`) y **Value Objects** como `BookId` y `Quantity` que protegen invariantes.
 
 ```ts
-export class Quantity {
-  private constructor(readonly value: number) {}
-  static of(value: number) {
-    if (!Number.isInteger(value) || value <= 0) throw new Error("Quantity inválida");
-    return new Quantity(value);
-  }
-}
+// curso/dia-02/ejercicios/src/domain/BookId.ts (idea)
+new BookId("BOOK-0001");
 
-export class ProductInventory {
-  constructor(readonly sku: string, private available: number) {}
-  reserve(qty: Quantity) {
-    if (this.available < qty.value) throw new Error("Stock insuficiente");
-    this.available -= qty.value;
-  }
-  getAvailable() {
-    return this.available;
-  }
-}
+// curso/dia-02/ejercicios/src/domain/Quantity.ts (idea)
+new Quantity(3);
 ```
 
 ### 9.4 ¿Qué son los casos de uso en la arquitectura hexagonal?

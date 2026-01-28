@@ -4,9 +4,34 @@
 
 **Temario (referencia):**
 - [1 · Introducción a la arquitectura de microservicios](../../NUEVO_TEMARIO.md#1-introducción-a-la-arquitectura-de-microservicios)
+  - ¿Qué es la arquitectura de microservicios?
+  - Principios y características de los microservicios
+  - Ventajas y desafíos de los microservicios
+  - Comparación con otras arquitecturas (monolítica, SOA, etc.)
+  - Aplicaciones y casos de uso de la arquitectura de microservicios
+  - Definición de límites de dominio y contexto del negocio
+  - Separación de responsabilidades y funcionalidades en microservicios
+  - Modelado y diseño de interfaces de comunicación
+  - Técnicas de descomposición y partición de servicios
+  - Estrategias de escalabilidad y disponibilidad en microservicios
 - [2 · Implementación de microservicios](../../NUEVO_TEMARIO.md#2-implementación-de-microservicios)
+  - Selección de tecnologías y lenguajes de programación
+  - Configuración y despliegue de infraestructura para microservicios
+  - Gestión de dependencias y versionado de microservicios
+  - Implementación de comunicación entre microservicios (síncrona y asíncrona)
+  - Técnicas de monitoreo y gestión de microservicios
 - [3 · Comunicación y descubrimiento de servicios](../../NUEVO_TEMARIO.md#3-comunicación-y-descubrimiento-de-servicios)
+  - Protocolos y formatos de intercambio de datos en microservicios
+  - Implementación de APIs y contratos de servicio
+  - Uso de herramientas de descubrimiento y registro de servicios
+  - Patrones de comunicación entre microservicios (síncrona y asíncrona)
+  - Gestión de errores y fallas en la comunicación
 - [8 · Migración a microservicios](../../NUEVO_TEMARIO.md#8-migración-a-microservicios)
+  - Evaluación de arquitecturas existentes para migración a microservicios
+  - Identificación de servicios y funcionalidades candidatos a migrar
+  - Estrategias de migración gradual y paralela
+  - Gestión de datos y bases de datos en entornos de microservicios
+  - Retos y consideraciones en la migración a microservicios
 
 ---
 

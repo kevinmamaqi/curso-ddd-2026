@@ -2,7 +2,17 @@
 **Duración:** 16:00 – 19:00  
 **Tema global:** Patrones Tácticos Avanzados en DDD
 
-**Temario (referencia):** [9 · Domain Driven Design (DDD)](../../NUEVO_TEMARIO.md#9-domain-driven-design-ddd) · [12 · Patrones de arquitectura en DDD](../../NUEVO_TEMARIO.md#12-patrones-de-arquitectura-en-ddd)
+**Temario (referencia):**
+- [9 · Domain Driven Design (DDD)](../../NUEVO_TEMARIO.md#9-domain-driven-design-ddd)
+  - Patrones tácticos
+  - Aplicando los distintos patrones a proyectos de Node
+- [12 · Patrones de arquitectura en DDD](../../NUEVO_TEMARIO.md#12-patrones-de-arquitectura-en-ddd)
+  - Arquitectura por capas
+  - Comunicación entre capas
+  - Puertos de entrada y salida en la arquitectura hexagonal
+  - Tipos de adaptadores en la arquitectura hexagonal
+  - Segregación de responsabilidad entre comandos y consultas
+  - Scope
 
 ## Propósito General
 

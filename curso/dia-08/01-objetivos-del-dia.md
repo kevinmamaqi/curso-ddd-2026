@@ -2,7 +2,18 @@
 **Duración:** 16:00 – 19:00
 **Tema global:** *Patrones y buenas prácticas en microservicios: eventos, mensajería y pub/sub (EDA)*
 
-**Temario (referencia):** [6 · Patrones y buenas prácticas en microservicios](../../NUEVO_TEMARIO.md#6-patrones-y-buenas-prácticas-en-microservicios) · [3 · Comunicación y descubrimiento de servicios](../../NUEVO_TEMARIO.md#3-comunicación-y-descubrimiento-de-servicios)
+**Temario (referencia):**
+- [6 · Patrones y buenas prácticas en microservicios](../../NUEVO_TEMARIO.md#6-patrones-y-buenas-prácticas-en-microservicios)
+  - Patrón de diseño de agregados
+  - Patrón de diseño de eventos y mensajes
+  - Patrón de diseño de gateway y API composition
+  - Patrón de diseño de publicación-suscripción
+  - Buenas prácticas en la implementación y gestión de microservicios
+  - Recomendaciones de seguridad en microservicios
+- [3 · Comunicación y descubrimiento de servicios](../../NUEVO_TEMARIO.md#3-comunicación-y-descubrimiento-de-servicios)
+  - Protocolos y formatos de intercambio de datos en microservicios
+  - Uso de herramientas de descubrimiento y registro de servicios
+  - Implementación de APIs y contratos de servicio
 
 ## Objetivos y agenda
 

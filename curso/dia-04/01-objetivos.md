@@ -3,7 +3,19 @@
 
 **Tema global:** Fundamentos de DDD y transición del Modelo Anémico al Modelo Rico
 
-**Temario (referencia):** [9 · Domain Driven Design (DDD)](../../NUEVO_TEMARIO.md#9-domain-driven-design-ddd) · [14 · Conocimiento y gestión de la complejidad del dominio](../../NUEVO_TEMARIO.md#14-conocimiento-y-gestión-de-la-complejidad-del-dominio)
+**Temario (referencia):**
+- [9 · Domain Driven Design (DDD)](../../NUEVO_TEMARIO.md#9-domain-driven-design-ddd)
+  - ¿Qué es DDD?
+  - Dominios principales (Core Domain)
+  - Subdominios
+  - Lenguaje ubicuo (Lenguaje común)
+  - Patrones estratégicos
+- [14 · Conocimiento y gestión de la complejidad del dominio](../../NUEVO_TEMARIO.md#14-conocimiento-y-gestión-de-la-complejidad-del-dominio)
+  - Lenguaje empresarial
+  - Modelo del dominio empresarial
+  - ¿Qué es un modelo?
+  - Modelado efectivo
+  - Modelos inconsistentes en la arquitectura hexagonal
 
 ---
 

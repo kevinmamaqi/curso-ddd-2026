@@ -2,7 +2,29 @@
 **Duración:** 16:00 – 19:00
 **Tema global:** *Monitorización, estandarización y cierre del proyecto final*
 
-**Temario (referencia):** [7 · Monitorización y solución de problemas](../../NUEVO_TEMARIO.md#7-monitorización-y-solución-de-problemas-en-microservicios) · [15 · Estandarización, conclusiones y revisión de proyectos](../../NUEVO_TEMARIO.md#15-estandarización-de-desarrollos-conclusiones-y-revisión-de-proyectos-del-curso) · [16 · Proyecto final evolutivo](../../NUEVO_TEMARIO.md#16-proyecto-final-evolutivo)
+**Temario (referencia):**
+- [7 · Monitorización y solución de problemas en microservicios](../../NUEVO_TEMARIO.md#7-monitorización-y-solución-de-problemas-en-microservicios)
+  - Optimización y mejora continua en entornos de microservicios
+  - Implementación de sistemas de descubrimiento y registro de servicios
+  - Gestión de configuraciones y variables de entorno en microservicios
+  - Escalado automático y orquestación de contenedores en microservicios
+  - Estrategias de respaldo y recuperación en entornos de microservicios
+- [15 · Estandarización de desarrollos, conclusiones y revisión de proyectos del curso](../../NUEVO_TEMARIO.md#15-estandarización-de-desarrollos-conclusiones-y-revisión-de-proyectos-del-curso)
+  - Introducción al concepto de estandarización de desarrollos
+  - Estrategias principales para estandarizar desarrollos entre equipos
+  - Principales herramientas
+  - Uso de métricas
+  - Revisando proyectos del curso y su estandarización
+- [16 · Proyecto final evolutivo](../../NUEVO_TEMARIO.md#16-proyecto-final-evolutivo)
+  - Estableciendo los requisitos del proyecto
+  - Estableciendo la arquitectura
+  - Orientando a microservicios
+  - Orientando a Arquitactura Hexagonal
+  - Garantizando eficiencia a través de CQRS
+  - Desarrollando la solución
+  - Redacción de pruebas
+  - Análisis de resultados
+  - Consejos y buenas prácticas para siguientes pasos
 
 ## Objetivos y agenda
 

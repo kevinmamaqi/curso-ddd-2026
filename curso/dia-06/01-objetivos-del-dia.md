@@ -2,7 +2,16 @@
 **Duración:** 16:00 – 19:00
 **Tema global:** *Escalabilidad y rendimiento: CQRS (separación comando/consulta) aplicado a microservicios*
 
-**Temario (referencia):** [4 · Escalabilidad y rendimiento en microservicios](../../NUEVO_TEMARIO.md#4-escalabilidad-y-rendimiento-en-microservicios)
+**Temario (referencia):**
+- [4 · Escalabilidad y rendimiento en microservicios](../../NUEVO_TEMARIO.md#4-escalabilidad-y-rendimiento-en-microservicios)
+  - ¿Cómo detectar problemas de escalado?
+  - Introducción a las técnicas de escalado más habituales
+  - Estrategias de escalabilidad horizontal y vertical
+  - Uso de patrón CQRS
+  - Uso de Base de Datos de Replicación
+  - Implementación de caché en microservicios
+  - Técnicas de optimización de rendimiento en microservicios
+  - Monitoreo y ajuste de recursos en entornos de microservicios
 
 ## Objetivos del día
 

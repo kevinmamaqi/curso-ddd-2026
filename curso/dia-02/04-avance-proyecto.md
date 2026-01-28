@@ -1,68 +1,132 @@
-# Avance del proyecto · Inventory Service — Sesión 2
+# Taller práctico — Sesión 2 (crear ejercicios en `curso/` + transfer final a `project/`)
 
-Bloque práctico (60 min dentro de la sesión):
-Poner en marcha el esqueleto hexagonal de inventory-service, trabajar puertos, adaptadores y DI, y arrancar con Prisma.
+Objetivo: practicar Hexagonal + DDD táctico con ejemplos **conceptualmente cercanos** al proyecto (reservas de stock), pero construidos desde cero en clase para entender cada pieza. Al final, hacemos el “transfer” al `inventory-service`.
 
-Descripción del servicio:
-El Inventory Service gestiona el stock de productos identificados por SKU. Permite:
+Stack (coherente con el repo): **Node 20 + TypeScript + Fastify + Vitest** (y `tsx` para dev).
 
-- Consultar existencias disponibles
-- Reservar unidades cuando se crea un pedido
-- Actualizar o crear registros en la base de datos
+## Guía de ritmo (3h)
 
-Esquema Prisma mínimo:
-Modelo Inventory con campos:
+| Tiempo | Actividad | Resultado observable |
+|---:|---|---|
+| 20 min | Setup del mini‑proyecto | `npm test` (Vitest) corre y compila TS. |
+| 55 min | Core (dominio + aplicación) | VO + Aggregate + Use Case funcionando con adaptadores in‑memory. |
+| 10 min | Descanso | — |
+| 45 min | Adaptador HTTP + errores | API mínima (Fastify), thin adapter y mapeo de errores. |
+| 40 min | Transfer al proyecto | Misma idea aplicada al `inventory-service` (mínimo 1 endpoint). |
+| 10 min | Cierre | Checklist + dudas. |
 
-- sku String como clave primaria
-- available Int para unidades disponibles
+## 1) Crear el mini‑proyecto (durante la clase)
 
-1. Prepara tu entorno (15 min)
-   Verifica en project/services/inventory-service:
+En la raíz del repo:
 
-- package.json, tsconfig.json, .eslintrc.json, Dockerfile, .env con variables PORT y DATABASE_URL
-- Carpetas vacías: src/domain/model, src/domain/ports, src/application/use-cases, src/application, src/infrastructure/postgres, src/infrastructure/http, y main.ts  
-  Ejecuta npm install y npm run build para confirmar que compila.
+```bash
+mkdir -p curso/dia-02/ejercicios
+cd curso/dia-02/ejercicios
+npm init -y
+npm i fastify
+npm i -D typescript tsx vitest @types/node
+```
 
-2. Descripción del reto (40 min)
-   Bosqueja la estructura hexagonal sin escribir todo el código, sólo define y piensa en:
+Configura `package.json` (inspirado en `project/services/inventory-service/package.json`):
 
-a) Puerto de salida
+- `"type": "module"`
+- scripts sugeridos:
+  - `dev`: `tsx watch src/main.ts`
+  - `test`: `vitest`
+  - `test:run`: `vitest run`
 
-- Interfaz con método findBySku(sku) que devuelve el objeto de dominio o null
-- Método save(inventory) que persiste cambios
-- Reflexiona: ¿qué parámetros reciben? ¿qué devuelven? ¿qué validaciones internas?
+Estructura mínima:
 
-b) Adaptador Postgres
+```text
+curso/dia-02/ejercicios/
+├── src/
+│   ├── domain/
+│   ├── application/
+│   ├── infrastructure/
+│   └── main.ts
+└── test/
+```
 
-- Clase que implementa el puerto, recibe PrismaClient por constructor
-- En findBySku consulta la tabla Inventory y construye la entidad de dominio
-- En save utiliza upsert para crear o actualizar el registro
-- Piensa: ¿cómo mapear la fila a la entidad? ¿qué errores hay que capturar?
+## 2) Core (dominio + aplicación) — qué vamos a construir
 
-c) Contenedor de dependencias
+Mini‑dominio: **biblioteca** (stock de copias de un libro).
 
-- Registrar PrismaClient como singleton
-- Registrar repositorio como scoped
-- Debe quedar listo para futuros use-cases
-- Discute: ¿por qué usar singleton vs scoped? ¿qué ocurre si cambias el scope?
+- `BookId` (Value Object) → formato `BOOK-0001`
+- `Quantity` (Value Object) → entero positivo
+- `BookStock` (Aggregate/Entity) → `reserve`, `release`, `replenish`
+- `ReserveCopiesUseCase` → orquesta repo + publisher y ejecuta el caso de uso
 
-d) Arranque y DI
+### Skeletons mínimos (para crear en clase)
 
-- buildServer crea el contenedor, configura Fastify/Express con logger y pasa el container al módulo de rutas
-- Módulo de rutas define una ruta de health que devuelve estado ok
-- Define ruta de reserva que extrae SKU y cantidad del request, invoca use case y responde 204 o error
-- Reflexiona: ¿cómo gestionas errores y respuestas HTTP?
+Value Object:
 
-3. Pasos de arranque y comprobación (5 min)
+```ts
+// src/domain/BookId.ts
+export class BookId {
+  // TODO: regex + invariantes + toString()
+}
+```
 
-- Genera Prisma Client con npx prisma generate
-- Ejecuta npm run dev y observa logs de conexión
-- Comprueba `curl http://localhost:3000/health` (local) o `curl http://localhost:3001/health` (Docker Compose) y valida que responde correctamente
+Puerto de salida:
 
-4. Reflexión y debate (15 min)
+```ts
+// src/application/ports/BookStockRepositoryPort.ts
+export interface BookStockRepositoryPort {
+  // TODO: getByBookId + save
+}
+```
 
-- Separación de responsabilidades: puerto vs adaptador vs use-case vs servidor HTTP
-- Inyección de PrismaClient: ¿cómo evitar fugas al dominio?
-- Escalabilidad: si añades más servicios, ¿cómo organizas el container y los módulos?
+Use Case:
 
-Nota: en la próxima sesión implementaremos un caso de uso concreto y añadiremos tests unitarios e integración siguiendo este patrón.
+```ts
+// src/application/use-cases/ReserveCopiesUseCase.ts
+export class ReserveCopiesUseCase {
+  async execute(command: { bookId: string; qty: number; reservationId: string }): Promise<void> {
+    // TODO: VO -> cargar agregado -> reserve -> save -> publish
+  }
+}
+```
+
+## 3) Adaptador HTTP (Fastify) — thin adapter
+
+En `src/main.ts`:
+
+- crea Fastify
+- registra rutas:
+  - `GET /health`
+  - `POST /book-stock/:bookId/reserve` (body: `{ qty, reservationId }`)
+- valida **forma** (campos requeridos / tipos)
+- delega al Use Case
+- traduce errores del dominio a HTTP (400/404/409/500)
+
+## 4) Validación rápida (curl) — ejercicios
+
+```bash
+curl -s http://localhost:3100/health
+
+curl -i -X POST http://localhost:3100/book-stock/BOOK-0001/reserve \
+  -H 'content-type: application/json' \
+  -d '{"qty":2,"reservationId":"R-1"}'
+```
+
+## 5) Transfer al proyecto (40 min)
+
+Mapeo 1:1:
+
+- `BookId` → `SKU`
+- `BookStock` → `ProductInventory`
+- `ReserveCopiesUseCase` → `ReserveInventoryUseCase`
+- In-memory → Postgres + RabbitMQ
+- wiring manual → Awilix (DI)
+
+Puntos de entrada:
+
+- `project/services/inventory-service/src/infrastructure/http/ProductInventoryRouter.ts`
+- `project/services/inventory-service/src/application/ReserveInventoryUseCase.ts`
+- `project/services/inventory-service/src/domain/value-objects/SKU.ts`
+
+## Stretch goals (si sobra tiempo)
+
+1. Añade versionado al evento (`version`) y documenta qué significa.
+2. Diseña 2 errores tipados de dominio y mapea a status (400/409).
+3. Añade un segundo adaptador de entrada (CLI) para ejecutar el caso de uso sin HTTP.

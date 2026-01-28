@@ -2,7 +2,25 @@
 **Duración:** 16:00 – 19:00
 **Tema global:** *Límites de dominio (bounded contexts), ownership y cómo se reflejan en el diseño del servicio*
 
-**Temario (referencia):** [1 · Introducción a la arquitectura de microservicios](../../NUEVO_TEMARIO.md#1-introducción-a-la-arquitectura-de-microservicios) · [3 · Comunicación y descubrimiento de servicios](../../NUEVO_TEMARIO.md#3-comunicación-y-descubrimiento-de-servicios) · [14 · Conocimiento y gestión de la complejidad del dominio](../../NUEVO_TEMARIO.md#14-conocimiento-y-gestión-de-la-complejidad-del-dominio)
+**Temario (referencia):**
+- [1 · Introducción a la arquitectura de microservicios](../../NUEVO_TEMARIO.md#1-introducción-a-la-arquitectura-de-microservicios)
+  - Definición de límites de dominio y contexto del negocio
+  - Separación de responsabilidades y funcionalidades en microservicios
+  - Técnicas de descomposición y partición de servicios
+- [3 · Comunicación y descubrimiento de servicios](../../NUEVO_TEMARIO.md#3-comunicación-y-descubrimiento-de-servicios)
+  - Implementación de APIs y contratos de servicio
+  - Patrones de comunicación entre microservicios (síncrona y asíncrona)
+  - Gestión de errores y fallas en la comunicación
+- [14 · Conocimiento y gestión de la complejidad del dominio](../../NUEVO_TEMARIO.md#14-conocimiento-y-gestión-de-la-complejidad-del-dominio)
+  - Problemas de negocio
+  - Descubrimiento del conocimiento
+  - Comunicación
+  - ¿Qué es el lenguaje ubicuo?
+  - ¿Qué es un contexto delimitado?
+  - Subdominios
+  - Límites
+  - Límites físicos
+  - Límites de propiedad
 
 ## Objetivos del día
 

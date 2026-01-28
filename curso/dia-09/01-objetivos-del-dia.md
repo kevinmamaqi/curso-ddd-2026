@@ -2,7 +2,22 @@
 **Duración:** 16:00 – 19:00
 **Tema global:** *Monitorización, troubleshooting y resiliencia en EDA (RabbitMQ + OTEL)*
 
-**Temario (referencia):** [5 · Tolerancia a fallos y resiliencia](../../NUEVO_TEMARIO.md#5-tolerancia-a-fallos-y-resiliencia-en-microservicios) · [7 · Monitorización y solución de problemas](../../NUEVO_TEMARIO.md#7-monitorización-y-solución-de-problemas-en-microservicios) · [13 · Patrones de comunicación en DDD](../../NUEVO_TEMARIO.md#13-patrones-de-comunicación-en-ddd)
+**Temario (referencia):**
+- [5 · Tolerancia a fallos y resiliencia en microservicios](../../NUEVO_TEMARIO.md#5-tolerancia-a-fallos-y-resiliencia-en-microservicios)
+  - Manejo de fallas y errores en microservicios
+  - Estrategias de recuperación y reintentos en microservicios
+  - Pruebas de resiliencia y recuperación en microservicios
+  - Diseño de sistemas anti-fragiles en microservicios
+- [7 · Monitorización y solución de problemas en microservicios](../../NUEVO_TEMARIO.md#7-monitorización-y-solución-de-problemas-en-microservicios)
+  - Uso de herramientas de monitorización y registro de logs
+  - Análisis y solución de problemas en microservicios
+  - Identificación y resolución de cuellos de botella y cuellos de rendimiento
+  - Detección y prevención de fallas en microservicios
+  - Monitoreo y control de métricas en entornos de microservicios
+- [13 · Patrones de comunicación en DDD](../../NUEVO_TEMARIO.md#13-patrones-de-comunicación-en-ddd)
+  - Traducción de modelos con estado
+  - Bandeja de salida
+  - Gestión de procesos
 
 ## Objetivos y agenda
 

@@ -2,7 +2,23 @@
 **Duración:** 16:00 – 19:00
 **Tema global:** *CQRS avanzado + patrones de comunicación (Outbox, Saga, Process Manager) y resiliencia*
 
-**Temario (referencia):** [4 · Escalabilidad y rendimiento en microservicios](../../NUEVO_TEMARIO.md#4-escalabilidad-y-rendimiento-en-microservicios) · [5 · Tolerancia a fallos y resiliencia](../../NUEVO_TEMARIO.md#5-tolerancia-a-fallos-y-resiliencia-en-microservicios) · [13 · Patrones de comunicación en DDD](../../NUEVO_TEMARIO.md#13-patrones-de-comunicación-en-ddd)
+**Temario (referencia):**
+- [4 · Escalabilidad y rendimiento en microservicios](../../NUEVO_TEMARIO.md#4-escalabilidad-y-rendimiento-en-microservicios)
+  - Uso de Lambdas para demandas de uso no continuas
+  - Uso de balanceadores de carga en microservicios
+  - Aplicando técnicas de escalado en proyectos Node
+- [5 · Tolerancia a fallos y resiliencia en microservicios](../../NUEVO_TEMARIO.md#5-tolerancia-a-fallos-y-resiliencia-en-microservicios)
+  - Implementación de circuit breakers y fallbacks
+  - Manejo de fallas y errores en microservicios
+  - Estrategias de recuperación y reintentos en microservicios
+  - Pruebas de resiliencia y recuperación en microservicios
+  - Diseño de sistemas anti-fragiles en microservicios
+- [13 · Patrones de comunicación en DDD](../../NUEVO_TEMARIO.md#13-patrones-de-comunicación-en-ddd)
+  - Traducción de modelos sin estado
+  - Traducción de modelos con estado
+  - Bandeja de salida
+  - Saga
+  - Gestión de procesos
 
 ## Objetivos y roadmap de la sesión
 

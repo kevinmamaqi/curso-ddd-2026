@@ -51,20 +51,19 @@ En la práctica:
 
 ### 1.3 Creando un puerto de entrada y salida en un proyecto Node bajo un modelo de arquitectura hexagonal
 
-Ejemplo mínimo (entrada + salida):
+Ejemplo mínimo (entrada + salida), para el mini‑dominio en `curso/dia-02/ejercicios`:
 
 ```ts
-// application/ports/ReserveStockPort.ts (puerto de entrada)
-export type ReserveStockCommand = { sku: string; qty: number; orderId: string };
-export interface ReserveStockPort {
-  execute(command: ReserveStockCommand): Promise<void>;
+// application/ports/ReserveCopiesPort.ts (puerto de entrada, opcional)
+export type ReserveCopiesCommand = { bookId: string; qty: number; reservationId: string };
+export interface ReserveCopiesPort {
+  execute(command: ReserveCopiesCommand): Promise<void>;
 }
 
-// application/ports/InventoryRepositoryPort.ts (puerto de salida)
-import type { ProductInventory } from "../../domain/model/ProductInventory";
-export interface InventoryRepositoryPort {
-  findBySku(sku: string): Promise<ProductInventory | null>;
-  save(inventory: ProductInventory): Promise<void>;
+// application/ports/BookStockRepositoryPort.ts (puerto de salida)
+export interface BookStockRepositoryPort {
+  getByBookId(bookId: BookId): Promise<BookStock | null>;
+  save(stock: BookStock): Promise<void>;
 }
 ```
 
@@ -84,116 +83,65 @@ flowchart LR
     D3[Use Cases & Services]
   end
   subgraph Ports["⚙️ Ports"]
-    P1[InventoryRepositoryPort]
-    P2[PaymentGatewayPort]
+    P1[BookStockRepositoryPort]
+    P2[EventPublisherPort]
   end
   subgraph Adapters["🔌 Adapters"]
-    A1[PostgresInventoryRepo]
-    A2[RabbitMQAdapter]
-    A3[StripePaymentGateway]
-    A4[HTTP InventoryHandler]
+    A1[InMemoryBookStockRepository]
+    A2[InMemoryEventPublisher]
+    A3[HTTP Fastify adapter]
   end
   D3 --> P1
   D3 --> P2
   P1 --> A1
-  P2 --> A3
-  A4 --> D3
+  P2 --> A2
+  A3 --> D3
 ```
 
-## 3. Ejemplo de puerto de salida: PaymentGatewayPort
+## 3. Ejemplo (en clase): puertos de salida (repo + eventos)
 
-### 3.1. Definición del puerto
+### 3.1. Puerto de persistencia (repo)
 
-```typescript
-// src/domain/ports/PaymentGatewayPort.ts
-/**
- * Puerto de salida: define el contrato para procesar pagos.
- * La capa de dominio solo conoce esta interfaz.
- */
-export interface PaymentGatewayPort {
-  charge(amount: number, currency: string): Promise<{ receiptId: string }>;
-}
-```
+En ejercicios (con el mismo stack del repo), los puertos están en TypeScript:
 
-### 3.2. Implementación concreta del puerto
+- `curso/dia-02/ejercicios/src/application/ports/BookStockRepositoryPort.ts`
+- `curso/dia-02/ejercicios/src/application/ports/EventPublisherPort.ts`
 
-```typescript
-// src/infrastructure/stripe/StripePaymentGateway.ts
-import Stripe from "stripe";
-import { PaymentGatewayPort } from "../../domain/ports/PaymentGatewayPort";
+### 3.2. Adaptadores in-memory (implementación de puertos)
 
-/**
- * Implementación concreta del puerto usando la librería Stripe.
- */
-export class StripePaymentGateway implements PaymentGatewayPort {
-  private client: Stripe;
-  constructor() {
-    // La clave se inyecta vía env var
-    this.client = new Stripe(process.env.STRIPE_KEY!, {
-      apiVersion: "2022-11-15",
-    });
-  }
-  async charge(
-    amount: number,
-    currency: string
-  ): Promise<{ receiptId: string }> {
-    const charge = await this.client.charges.create({ amount, currency });
-    return { receiptId: charge.id };
-  }
-}
-```
+- Repo (persistencia): `curso/dia-02/ejercicios/src/infrastructure/persistence/InMemoryBookStockRepository.ts`
+- Publisher (eventos): `curso/dia-02/ejercicios/src/infrastructure/events/InMemoryEventPublisher.ts`
+
+Micro-reto (5 min): abre `ReserveCopiesUseCase` y decide qué es “contrato estable” del evento `CopiesReserved`:
+
+- `event.type`
+- nombres/campos de `payload`
+- versionado del evento (si lo añades, ¿dónde vive?)
 
 ## 4. Adaptador de entrada: HTTP Handler
 
 ```typescript
-// src/infrastructure/http/inventory-routes.ts
-import { FastifyInstance } from "fastify";
-import { container } from "../../application/container";
-import { ReserveStockUseCase } from "../../application/use-cases/ReserveStockUseCase";
-
-/**
- * Registra rutas HTTP y delega en UseCases.
- * Este adapter traduce request/response ↔ objetos de dominio.
- */
-export async function registerInventoryRoutes(app: FastifyInstance) {
-  const reserveUseCase = container.resolve<ReserveStockUseCase>(
-    "reserveStockUseCase"
-  );
-  app.post("/inventory/:sku/reserve", async (req, reply) => {
-    const { sku } = req.params as { sku: string };
-    const { qty } = req.body as { qty: number };
-    // Ejemplo de Lógica de negocio en el adaptador. EVITAR!!!
-    if (!sku || qty <= 0) {
-      return reply
-        .status(400)
-        .send({ error: "SKU inválido o cantidad no positiva" });
-    }
-    await reserveUseCase.execute(sku, qty);
-    reply.status(204).send();
-  });
-}
+// curso/dia-02/ejercicios/src/main.ts (idea)
+// - valida forma (JSON, campos requeridos)
+// - delega en el Use Case
+// - traduce error a HTTP
+//
+// POST /book-stock/:bookId/reserve { qty, reservationId }
 ```
+
+Checklist “thin HTTP adapter”:
+
+- Valida forma (requeridos/tipos) y traduce a un comando.
+- Llama al Use Case (nada de lógica de stock aquí).
+- Traduce errores del core a HTTP (códigos estables).
 
 ## 5. Inversión de Dependencias (DIP) en main.ts
 
 ```typescript
-// src/main.ts
-import Fastify from "fastify";
-import { setupContainer } from "./application/container"; // función que registra todo
-import { registerInventoryRoutes } from "./infrastructure/http/inventory-routes";
-
-export async function buildServer() {
-  const container = setupContainer();         // ← wiring explícito
-  const app = Fastify({ logger: true });
-
-  await registerInventoryRoutes(app, container); // ← se lo pasas al router
-  return app;
-}
-
-if (import.meta.url === `file://${process.argv[1]}`) {
-  buildServer()
-    .then(app => app.listen({ port: +process.env.PORT! }))
-    .catch(err => { console.error(err); process.exit(1); });
+// curso/dia-02/ejercicios/src/main.ts (idea)
+export function buildContainer() {
+  // wiring explícito, sin magia
+  return { stockRepo, events, reserveCopiesUseCase };
 }
 ```
 
@@ -214,41 +162,15 @@ if (import.meta.url === `file://${process.argv[1]}`) {
 
 ### Ejemplo de test unitario para un adapter de salida
 
-```typescript
-// tests/infrastructure/postgres/InventoryRepositoryPostgres.test.ts
-import { InventoryRepositoryPostgres } from "../../../src/infrastructure/postgres/InventoryRepositoryPostgres";
-import { PrismaClient } from "@prisma/client";
-import { ProductInventory } from "../../../src/domain/model/ProductInventory";
+En ejercicios, los tests son con Vitest (igual que en `project/services/*`):
 
-describe("InventoryRepositoryPostgres", () => {
-  let prisma: PrismaClient;
-  let repo: InventoryRepositoryPostgres;
+- `curso/dia-02/ejercicios/test/domain.test.ts`
+- `curso/dia-02/ejercicios/test/reserve-usecase.test.ts`
 
-  beforeAll(() => {
-    // Aquí podríamos usar Prisma Client con una base de datos SQLite en memoria
-    prisma = new PrismaClient({
-      datasources: { db: { url: "file:./test.db?mode=memory&cache=shared" } },
-    });
-    repo = new InventoryRepositoryPostgres(prisma);
-  });
+Mini-reto (10 min): lee ese test y responde:
 
-  afterAll(async () => {
-    await prisma.$disconnect();
-  });
-
-  it("save y findBySku funcionan correctamente", async () => {
-    const sku = "TEST123";
-    const inventory = new ProductInventory(sku, 10);
-
-    await repo.save(inventory);
-    const fetched = await repo.findBySku(sku);
-
-    expect(fetched).not.toBeNull();
-    expect(fetched!.sku).toBe(sku);
-    expect(fetched!.available).toBe(10);
-  });
-});
-```
+1. ¿Qué se testea en dominio (sin puertos)?
+2. ¿Qué se testea en aplicación (con dobles de puertos)?
 
 ---
 
@@ -256,9 +178,9 @@ describe("InventoryRepositoryPostgres", () => {
 
 Una fuente común de acoplamiento es “un endpoint que hace de todo”: valida, cambia estado, consulta y compone respuestas complejas. Esto se suele formalizar como **segregación de comandos y consultas**.
 
-- **Command**: intención de cambiar estado (p. ej. `ReserveStock`).
+- **Command**: intención de cambiar estado (p. ej. `ReserveCopies`).
   - Devuelve `204/202` o un *resource id*, pero evita devolver grandes lecturas.
-- **Query**: intención de leer estado (p. ej. `GetInventoryBySku`).
+- **Query**: intención de leer estado (p. ej. `GetBookStockById`).
   - No cambia estado; puede optimizarse con caché/proyecciones.
 
 En hexagonal, lo habitual es:
@@ -277,3 +199,21 @@ El *scope* evita fugas de estado y reduce bugs difíciles:
 - **Transient**: objetos sin estado (mappers, factories pequeñas).
 
 Regla práctica: si una dependencia mantiene estado mutable, evita que sea singleton salvo que esté diseñada para ello.
+
+---
+
+## 10. Transfer al proyecto (al final de la sesión)
+
+Cuando el patrón esté claro en `curso/dia-02/ejercicios`, lo llevamos al proyecto:
+
+- `BookId` → `SKU`
+- `BookStock` → `ProductInventory`
+- `ReserveCopiesUseCase` → `ReserveInventoryUseCase`
+- InMemory repo/publisher → Postgres + RabbitMQ
+- HTTP (Fastify) → Fastify router (mismo concepto, distinto contexto)
+
+Puntos de entrada del proyecto para hacer el “swap”:
+
+- `project/services/inventory-service/src/infrastructure/http/ProductInventoryRouter.ts`
+- `project/services/inventory-service/src/application/ReserveInventoryUseCase.ts`
+- `project/services/inventory-service/src/domain/value-objects/SKU.ts`
