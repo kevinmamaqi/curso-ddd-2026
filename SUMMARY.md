@@ -32,6 +32,7 @@
   * [01 · Objetivos](curso/dia-05/01-objetivos.md)
   * [02 · DDD Avanzado](curso/dia-05/02-ddd-avanzado.md)
   * [03 · Avance Proyecto](curso/dia-05/03-avance-proyecto.md)
+  * [04 · Taller: Order Fulfillment](curso/dia-05/04-taller-order-fulfillment.md)
 
 * **Sesión 06 – CQRS (Parte 1) (Jueves 12-feb-2026)**
   * [00 · Repaso](curso/dia-06/00-repaso.md)

@@ -6,6 +6,12 @@
 
 ---
 
+## Cómo usar este material hoy
+
+- Este documento es el “mapa de patrones”.
+- El taller guiado (análisis → diseño → implementación) está en `curso/dia-05/04-taller-order-fulfillment.md`.
+- La referencia de resultado final (artefactos + snippets) está en `local/dia-05/`.
+
 ## Esquema General de Patrones Tácticos
 
 ```mermaid
@@ -19,6 +25,54 @@ flowchart TD
 ```
 
 Este diagrama ilustra las principales abstracciones del modelo táctico en DDD, actuando como sistema conceptual que vertebra el diseño del dominio. Cada nodo representa un módulo semántico con fronteras y responsabilidades bien definidas.
+
+---
+
+## 0 · Continuidad: lo que ya tenemos en `inventory-service` (Sesión 3 → 4)
+
+En `project/inventory-service/` ya aplicamos (a distintos niveles de madurez) el pipeline:
+
+1. **Value Objects** para validar conceptos (no `string/number` “pelados”).
+2. **Agregado/Entidad** con comportamiento (`reserve`, `replenish`, etc.) y reglas.
+3. **Use Cases** que orquestan (cargar → operar dominio → guardar → publicar).
+4. **Puertos** para persistencia y publicación (DIP).
+5. **Adaptadores** HTTP/DB/Eventos.
+
+### 0.1 “Foto rápida” en el repo
+
+- VOs: `project/inventory-service/src/domain/va/BookId.ts`, `project/inventory-service/src/domain/va/Quantity.ts`, `project/inventory-service/src/domain/va/ReservationId.ts`
+- Use case: `project/inventory-service/src/application/ReserveBookUseCase.ts`
+- Puertos: `project/inventory-service/src/application/ports/BookRepositoryPort.ts`, `project/inventory-service/src/application/ports/BookEventsPublisherPort.ts`
+- Evento publicado (hoy): `project/inventory-service/src/infra/events/BookEventsPublisherAdapter.ts`
+
+### 0.2 El “salto” de hoy (DDD avanzado)
+
+En sesión 4 el foco era **modelar bien dentro de un contexto**. Hoy damos el salto a:
+
+- **Context Mapping**: *¿cómo se relaciona Inventario con otros contextos sin “imports directos”?*
+- **Eventos**: distinguir eventos **de dominio** (internos del agregado) vs eventos **de integración** (contratos entre servicios).
+- **Anti‑Corruption Layer (ACL)**: traducir modelos/idiomas entre contextos.
+- **Consistencia eventual**: aceptar que algunos estados (p.ej. “pedido reservado”) no se confirman en la misma transacción.
+
+> En la práctica esto lo bajamos creando `order-fulfillment-service` como consumidor de `inventory-service`.
+
+---
+
+## 0.3 Context Mapping (estratégico, aplicado)
+
+En microservicios, la pregunta clave no es “¿cuántas clases tengo?”, sino:
+
+> **¿Dónde cambia el lenguaje y dónde necesito consistencia fuerte?**
+
+Patrones de relación típicos (útiles para el taller de hoy):
+
+- **Upstream/Downstream**: un contexto expone un modelo/contrato; el otro depende de él.
+- **Customer/Supplier**: el downstream “empuja” requisitos del contrato al upstream (negociación explícita).
+- **Published Language**: el upstream publica un lenguaje estable (API/eventos) que el downstream consume.
+- **Conformist**: el downstream se “traga” el modelo del upstream (rápido, pero acopla).
+- **Anti‑Corruption Layer (ACL)**: el downstream traduce el modelo del upstream a su propio lenguaje (más trabajo, menos acoplamiento).
+
+En el taller, **Inventario** suele ser *upstream* (publica stock/reservas) y **Fulfillment** *downstream* (necesita reservar para cumplir pedidos). La decisión interesante es: ¿Conformist o ACL?
 
 ---
 
@@ -98,6 +152,23 @@ graph LR
 ```
 
 Esta arquitectura permite desacoplar la lógica de negocio de sus efectos colaterales, promoviendo un diseño reactivo y extensible.
+
+### 2.4 Domain Events vs Integration Events (Published Language)
+
+En arquitectura distribuida conviene separar dos conceptos que suelen mezclarse:
+
+- **Domain Event**: vive dentro del bounded context, cerca del agregado. Es parte del *modelo*.
+- **Integration Event**: cruza límites entre servicios. Es parte del *contrato* (Published Language) y debe ser estable y versionado.
+
+Regla operativa para el curso:
+
+1. El agregado registra **domain events** (p.ej. `ReservationRequested`).
+2. La capa de aplicación decide cuáles se convierten en **integration events** (p.ej. `ReserveStockRequested v1`) y cómo se publican.
+3. El servicio consumidor usa **ACL** para traducir payload externo → VOs internos.
+
+Conexión con el repo:
+
+- En `project/inventory-service/` hoy la publicación es intencionadamente simple (strings + payload mínimo). En el taller de sesión 5 proponemos evolucionar hacia un sobre (“envelope”) con `{ type, version, occurredAt, payload }` y nombres en pasado para eventos de integración.
 
 ### 2.3 Ejemplo Contextualizado
 

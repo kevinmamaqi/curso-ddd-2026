@@ -18,6 +18,8 @@
 
 Proporcionar a los participantes una comprensión profunda y aplicable de los patrones tácticos que forman la columna vertebral del diseño de software basado en DDD, con una mirada concreta a su implementación en Node.js. Este módulo se enfoca tanto en la teoría como en su transferencia práctica al código.
 
+Hoy no “empezamos de cero”: vamos a **extender** lo construido en Sesión 3 y 4 en `project/inventory-service/`, y además crearemos un **nuevo servicio complementario** para practicar DDD con más complejidad (context mapping + eventos + consistencia eventual).
+
 ---
 
 ## Objetivos Específicos
@@ -36,12 +38,27 @@ Proporcionar a los participantes una comprensión profunda y aplicable de los pa
 
 ---
 
+## Qué construiremos hoy (práctica)
+
+Además de consolidar patrones tácticos, modelaremos un servicio nuevo:
+
+- **Nuevo servicio:** `order-fulfillment-service` (cumplimiento de pedidos).
+- **Complemento natural:** consume capacidades de `inventory-service` (reservar / liberar / reponer stock), pero **sin acoplarse** a su modelo interno.
+- **Nuevo foco DDD (estratégico + táctico):**
+  - definir bounded contexts y su **context map** (upstream/downstream, published language, ACL),
+  - diseñar eventos (dominio vs integración) y su versionado,
+  - trabajar con **consistencia eventual** (estado de pedido evoluciona por eventos).
+
+> Resultado final esperado (solo referencia para comparar): `local/dia-05/`.
+
 ## Resultados Esperados
 
 Al final de la sesión, los estudiantes deberán ser capaces de:
 
 * Explicar con propiedad los elementos centrales del diseño táctico en DDD.
 * Identificar cuándo usar cada patrón y por qué.
+* Proponer límites (bounded contexts) y mapear integraciones sin acoplamiento directo.
+* Implementar un flujo simple con eventos entre servicios (aunque sea con un bus in-memory en el taller).
 * Detectar errores estructurales comunes en modelos tácticos y corregirlos.
 * Formular mejores decisiones de diseño a partir de una evaluación crítica.
 
