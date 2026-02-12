@@ -2,6 +2,8 @@
 
 **En sesión (40 min) + trabajo en casa**
 
+Antes de avanzar, asegúrate de estar en el mismo punto de llegada que la sesión 5: `inventory-service` con su modelo de escritura “rico” y (si lo hiciste) el nuevo `order-fulfillment-service` como bounded context separado. La sesión 6 parte de esa base y la evoluciona sin romper lo anterior: añadimos un **read model** y una **proyección** para que las consultas no dependan del modelo de escritura.
+
 ## Meta de hoy
 
 Introducir CQRS de forma incremental: mantener el modelo de escritura “rico” y crear una lectura optimizada (read model) que se actualiza por eventos/proyecciones.

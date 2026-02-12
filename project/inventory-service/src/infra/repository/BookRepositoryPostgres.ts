@@ -1,13 +1,8 @@
 import { BookRepositoryPort } from "../../application/ports/BookRepositoryPort";
 import { Book } from "../../domain/entities/BookStock";
-import { BookId } from "../../domain/va/BookId";
 import { DBClient } from "./pg";
+import { toBookDomain } from "./transform";
 
-
-function toBookDomain(row: any): Book {
-    const book = new Book(BookId.of(row.id), row.title, row.stock);
-    return book;
-}
 
 export class BookRepositoryPostgres implements BookRepositoryPort {
     constructor(private readonly dbClient: DBClient) {}

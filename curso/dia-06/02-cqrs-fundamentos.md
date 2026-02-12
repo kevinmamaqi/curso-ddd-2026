@@ -1,6 +1,8 @@
 # Módulo 4 — Escalabilidad y rendimiento: CQRS (fundamentos)
 
 En este primer bloque de **CQRS** nos centraremos en los fundamentos esenciales que toda arquitectura debe contemplar antes de incorporar patrones más avanzados. Sin rodeos, analizaremos por qué dividir lecturas y escrituras, cómo se relacionan sus componentes clave y cómo se materializa este enfoque en un ejemplo real de dominio.
+
+Conexión con lo anterior: ya tenemos un modelo de escritura con invariantes (agregados + use cases) y eventos que expresan “qué pasó”. CQRS aprovecha justo esa base: **escrituras coherentes** en el dominio y **lecturas rápidas** mediante vistas/proyecciones.
  
 ## 0. Dinámica Inicial: "El Dilema del Modelo Único"
 **Actividad Grupal**:  
