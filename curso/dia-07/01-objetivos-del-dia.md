@@ -2,6 +2,8 @@
 **Duración:** 16:00 – 19:00
 **Tema global:** *CQRS avanzado + patrones de comunicación (Outbox, Saga, Process Manager) y resiliencia*
 
+> En este día veremos como se conenctan dos servicios distintos usando **eventos** de forma robusta usando **Outbox + idempotencia**.
+
 **Temario (referencia):**
 - [4 · Escalabilidad y rendimiento en microservicios](../../NUEVO_TEMARIO.md#4-escalabilidad-y-rendimiento-en-microservicios)
   - Uso de Lambdas para demandas de uso no continuas
@@ -31,9 +33,9 @@
 
 ### Metas de código
 
-1. Persistir eventos `OrderCreated` y `ProductInventoryReserved`.  
-2. Outbox funcionando con deduplicación.  
-3. Proyección `order_status` actualizada por Saga.  
+1. Persistir eventos de integración `ReserveStockRequested` y `StockReserved`/`StockReservationRejected`.  
+2. Outbox funcionando con idempotencia/deduplicación.  
+3. Proyección `order_status_view` actualizada a partir del flujo distribuido.  
 
 *Dejar listo para la sesión 8 (EDA).*  
 

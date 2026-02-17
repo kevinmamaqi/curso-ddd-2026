@@ -1,0 +1,28 @@
+flowchart LR
+  subgraph Sales[Sales / Checkout (fuera de scope)]
+    OPLACED[OrderPlaced]
+  end
+
+  subgraph Fulfillment[Bounded Context: Fulfillment]
+    FO[FulfillmentOrder (Aggregate)]
+    ACL[ACL: Inventory Translator]
+  end
+
+  subgraph Inventory[Bounded Context: Inventory]
+    INV[Stock + Reservations]
+    PL[Published Language: Stock Events v1]
+  end
+
+  subgraph Shipping[Shipping / Carrier (externo o futuro)]
+    CARRIER[Carrier APIs]
+  end
+
+  Sales -->|Command/API| Fulfillment
+  Fulfillment -->|Integration Event: ReserveStockRequested| Inventory
+  Inventory -->|Integration Events: StockReserved / StockReservationRejected| Fulfillment
+
+  Fulfillment -->|API/Event| Shipping
+
+  Inventory --> PL
+  Fulfillment --> ACL
+  ACL -->|Translate payloads| FO

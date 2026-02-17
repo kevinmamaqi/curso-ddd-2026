@@ -1,4 +1,5 @@
 import { InvalidReservationIdError } from "../errors";
+import { InventoryDomainEvent } from "../events";
 import { BookId } from "../va/BookId";
 import { Quantity } from "../va/Quantity";
 import { ReservationId } from "../va/ReservationId";
@@ -7,14 +8,13 @@ export class Book {
     readonly id: BookId;
     public title: string;
     public stock: number;
-    public domainEvents: any[];
+    private pendingDomainEvents: InventoryDomainEvent[] = [];
     private readonly reservations: Map<ReservationId, number> = new Map();
 
     constructor(id: BookId, title: string, stock: number) {
         this.id = id;
         this.title = title;
         this.stock = stock;
-        this.domainEvents = [];
     }
 
     reserve(reservationId: ReservationId, qty: Quantity) {
@@ -24,19 +24,33 @@ export class Book {
         if (this.stock < qty.toValue()) {
             throw new Error("Not enough stock")
         }
+
+        this.reservations.set(reservationId, qty.toValue());
         this.stock = this.stock - qty.toValue();
-        this.domainEvents.push({
-            eventName: "reserved",
+
+        this.pendingDomainEvents.push({
+            type: "StockReserved",
+            occurredAt: new Date(),
             payload: {
-                id: this.id.toValue(),
-                qty: qty.toValue(),
-                tz: Date.now()
-            }
-        })
+                sku: this.id.toValue(),
+                reservationId: reservationId.toValue(),
+                quantity: qty.toValue(),
+                available: this.stock,
+            },
+        });
     }
 
     replenish(qty: Quantity) {
         this.stock = this.stock + qty.toValue();
+        this.pendingDomainEvents.push({
+            type: "StockReplenished",
+            occurredAt: new Date(),
+            payload: {
+                sku: this.id.toValue(),
+                quantity: qty.toValue(),
+                available: this.stock,
+            },
+        });
     }
 
     getAvailableCopies(): number {
@@ -57,5 +71,9 @@ export class Book {
     
     releaseReservation(reservationId: ReservationId) {
         this.reservations.delete(reservationId);
+    }
+
+    pullDomainEvents(): InventoryDomainEvent[] {
+        return this.pendingDomainEvents.splice(0, this.pendingDomainEvents.length);
     }
 }

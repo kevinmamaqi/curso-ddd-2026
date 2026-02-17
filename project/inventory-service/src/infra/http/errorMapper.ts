@@ -8,5 +8,9 @@ export function mapErrorToHttpStatus(app: FastifyInstance, err: unknown, reply: 
             message: err.message,
         });
     }
-    return 500;
+    app.log.error({ err }, "Unhandled error")
+    return reply.status(500).send({
+        code: "INTERNAL_ERROR",
+        message: "Unexpected error",
+    });
 }

@@ -6,8 +6,8 @@ enum EventVersion {
 } 
 
 export class BookEventsPublisher implements BookEventsPublisherPort{
-    private eventsArray: any[] | undefined = []
-    public published: any[] | undefined = []
+    private readonly eventsArray: any[] = []
+    public readonly published: any[] = []
     public version: EventVersion = EventVersion.v1
     public epoch: number
 

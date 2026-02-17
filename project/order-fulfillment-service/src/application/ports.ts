@@ -1,26 +1,22 @@
-import { FulfillmentDomainEvents } from "../domain/events"
-import { FulfillmentOrder } from "../domain/fullfillment-order"
+import { IntegrationEvent } from "../domain/events";
+import { FulfillmentOrder } from "../domain/fulfillment-order";
+import { OrderId } from "../domain/value-objects";
 
-type Line = {
-    qty: number
-    sku: string
-    lineId: string
+export interface FulfillmentOrderRepositoryPort {
+  getById(id: OrderId): Promise<FulfillmentOrder | null>;
+  save(order: FulfillmentOrder): Promise<void>;
 }
 
-export type ReserveStockRequest = {
-    reservationId: string
-    lines: Line[]
-}
+export type ReserveStockRequest = Readonly<{
+  reservationId: string;
+  lines: Array<{ sku: string; qty: number }>;
+}>;
 
 export interface InventoryReservationsPort {
-    requestReservation(request: ReserveStockRequest): Promise<void>
-}
-
-export interface FulfillmentOrderRepository {
-    save(order: FulfillmentOrder): Promise<void>
-    findById(orderId: number): Promise<FulfillmentOrder | null>
+  requestReservation(request: ReserveStockRequest): Promise<void>;
 }
 
 export interface IntegrationEventPublisherPort {
-    publish(event: FulfillmentDomainEvents): Promise<void>
+  publish(event: IntegrationEvent<string, unknown>): Promise<void>;
 }
+

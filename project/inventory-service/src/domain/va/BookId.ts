@@ -13,4 +13,8 @@ export class BookId {
     toValue() {
         return this.value;
     }
+
+    toString(): string {
+        return this.value;
+    }
 }

@@ -19,10 +19,21 @@ export class BookRepositoryPostgres implements BookRepositoryPort {
 
     async findById(id: string): Promise<Book | null> {
         const res = await this.dbClient.query("SELECT * FROM books WHERE id = $1", [id]);
-        return toBookDomain(res.rows[0]) || null;
+        const row = res.rows[0];
+        if (!row) return null;
+        return toBookDomain(row);
     }
 
     async save(book: Book): Promise<void> {
-        await this.dbClient.query("INSERT INTO books (id, title, stock) VALUES ($1, $2, $3)", [book.id.toValue(), book.title, book.stock]);
+        await this.dbClient.query(
+            `
+                INSERT INTO books (id, title, stock)
+                VALUES ($1, $2, $3)
+                ON CONFLICT (id) DO UPDATE
+                    SET title = EXCLUDED.title,
+                        stock = EXCLUDED.stock
+            `,
+            [book.id.toValue(), book.title, book.stock],
+        );
     }
 }

@@ -12,13 +12,11 @@
 
 Coreografía recomendada:
 
-1. `order-service` crea una orden (`PENDING`) y publica `OrderCreated` (v1).
-2. `inventory-service` consume `OrderCreated`, intenta reservar stock y publica:
-   - `ProductInventoryReserved` (v1), o
-   - `ProductInventoryReservationFailed` (v1).
-3. `order-service` consume el resultado y transiciona la orden:
-   - `CONFIRMED` si hay reserva, o
-   - `CANCELLED` si falla (compensación).
+1. `order-fulfillment-service` crea una orden (estado `RESERVATION_PENDING`) y publica `ReserveStockRequested` (v1) en su **Outbox**.
+2. `inventory-service` consume `ReserveStockRequested`, intenta reservar stock y publica (por línea):
+   - `StockReserved` (v1), o
+   - `StockReservationRejected` (v1).
+3. `order-fulfillment-service` consume el resultado y transiciona el estado de la orden (por confirmación/rechazo de líneas), actualizando la proyección `order_status_view`.
 
 > Alternativa (orquestada): implementar el Process Manager en `order-api` y mantener el estado del proceso allí.
 
@@ -28,9 +26,9 @@ Coreografía recomendada:
 
 | # | Componente | Entregable | Done? |
 |---|------------|------------|-------|
-| 1 | order-service | Outbox table + publisher (polling) para `OrderCreated` | |
-| 2 | inventory-service | Consumer `OrderCreated` + publicación de resultado | |
-| 3 | order-service | Consumer de inventario + transición de estado + proyección `order_status` | |
+| 1 | order-fulfillment-service | Outbox table + publisher (polling) para `ReserveStockRequested` | |
+| 2 | inventory-service | Consumer `ReserveStockRequested` + publicación de resultado | |
+| 3 | order-fulfillment-service | Consumer de inventario + transición de estado + proyección `order_status_view` | |
 | 4 | Observabilidad | Métricas del flujo (`outbox_*`, `process_*`) + panel básico | |
 
 ### Checklist de calidad

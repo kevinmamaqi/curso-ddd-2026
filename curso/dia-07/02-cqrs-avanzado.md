@@ -29,7 +29,7 @@ Ventaja: coordina procesos largos. Riesgo: aumenta complejidad; exige idempotenc
 
 ## 2. Bandeja de salida (Outbox Pattern): implementación robusta
 
-El patrón Outbox desacopla la transacción de la base de datos de la publicación de eventos, garantizando entrega exactly-once incluso ante fallos.
+El patrón Outbox desacopla la transacción de la base de datos de la publicación de eventos, garantizando **no pérdida** (durabilidad) y una entrega **al menos una vez**. La “exactly-once” real se consigue de forma práctica con **idempotencia/deduplicación** en consumidores.
 
 ### 2.1 Diagrama de Secuencia con Fallos
 
@@ -48,11 +48,11 @@ sequenceDiagram
     Note over W,MQ: Reintentos automáticos si falla publicación
 ```
 
-Este flujo asegura que ningún evento quede sin publicar ni se duplique.
+Este flujo asegura que ningún evento quede sin publicar; asume que puede haber duplicados y los resolvemos con idempotencia.
 
 **Requisitos Clave**:
 
-1. Entrega exactly-once.
+1. Entrega al menos una vez + deduplicación en consumidores.
 2. Gestión de desconexiones de MQ.
 3. Registro de métricas: eventos procesados, latencia.
 4. Priorización basada en `payload.metadata.priority`.

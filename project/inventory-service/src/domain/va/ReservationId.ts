@@ -13,4 +13,8 @@ export class ReservationId {
     toValue(): string {
         return this.value;
     }
+
+    toString(): string {
+        return this.value;
+    }
 }

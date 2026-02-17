@@ -1,6 +1,9 @@
 # Sesión 7 · Martes 17-feb-2026  
 ## Conceptos principales de la sesión anterior
 
+- Ya tenemos los bounded contexts separados (`inventory-service` y `order-fulfillment-service`).
+- En inventario (día 6) ya existe un CQRS incremental: write model + read model (`inventory_view`) actualizado por una proyección.
+
 - Identificar que problemas se pueden resolver con CQRS
   - Problemas de rendimiento
   - Problemas de escalabilidad
