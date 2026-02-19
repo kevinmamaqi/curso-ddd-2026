@@ -129,6 +129,38 @@ Buenas prácticas mínimas:
 - Incluye `eventId`, `occurredAt`, `correlationId` y `version` en el contrato.
 - Diseña para “al menos una vez”: idempotencia y consumidores tolerantes a duplicados.
 
+#### Ejemplo aplicado al proyecto del curso (día 7 → día 8)
+
+En el repo del curso (`project/`) venimos usando este concepto:
+
+- **Evento de integración** (Published Language): `ReserveStockRequested`, `StockReserved`, `StockReservationRejected`
+- **Mensaje** (envelope): `messageId` + `correlationId` + `event`
+
+Ejemplo mínimo (TypeScript) alineado con nuestros bounded contexts `order-fulfillment-service` e `inventory-service`:
+
+```ts
+// Contrato compartido (conceptual)
+export type IntegrationEvent<TType extends string, TPayload> = Readonly<{
+  type: TType
+  version: 1 | 2
+  occurredAt: string // ISO
+  payload: TPayload
+}>
+
+export type IntegrationMessage<TEvent extends IntegrationEvent<string, unknown>> = Readonly<{
+  messageId: string
+  correlationId: string
+  event: TEvent
+}>
+
+export type ReserveStockRequested = IntegrationEvent<
+  "ReserveStockRequested",
+  { reservationId: string; lines: Array<{ sku: string; qty: number }> }
+>
+```
+
+> Regla práctica: `correlationId = reservationId` en este flujo, porque nos sirve para correlacionar todos los mensajes del “proceso” de reserva.
+
 ### 6. Patrón de diseño de gateway y API composition
 
 En microservicios es habitual que un cliente necesite datos de múltiples servicios. Dos enfoques:
@@ -481,6 +513,102 @@ Piensen en RabbitMQ como un sistema de correo muy sofisticado con carteros intel
 - **Binding:** Regla que conecta un exchange a una cola (a menudo con un routing key o patrón).
 
 - **Consumer:** Lee mensajes de las colas.
+
+#### Topología RabbitMQ del proyecto (ejemplo)
+
+Si llevamos el flujo del día 7 a RabbitMQ (día 8), una topología mínima sería:
+
+```mermaid
+flowchart LR
+  X["topic exchange: course.events.v1"]:::broker
+
+  Qinv["queue: inventory.reserve_stock_requested.v1"]:::queue
+  Qful["queue: fulfillment.inventory_results.v1"]:::queue
+
+  F["order-fulfillment-service"]:::svc
+  I["inventory-service"]:::svc
+
+  F -->|rk: fulfillment.reserve-stock-requested.v1| X
+  X -->|bind: fulfillment.reserve-stock-requested.v1| Qinv
+  Qinv --> I
+
+  I -->|rk: inventory.stock-reserved.v1| X
+  I -->|rk: inventory.stock-rejected.v1| X
+  X -->|bind: inventory.stock-*.v1| Qful
+  Qful --> F
+
+classDef broker fill:#ccf,stroke:#333,stroke-width:1px;
+classDef queue fill:#efe,stroke:#333,stroke-width:1px;
+classDef svc fill:#fee,stroke:#333,stroke-width:1px;
+```
+
+#### Publicación con confirmación (Node.js + amqplib, conceptual)
+
+Este snippet está alineado con el objetivo “confirmSelect”: publicas en un *confirm channel* y esperas confirmación del broker.
+
+```ts
+import amqp from "amqplib"
+
+async function publishReserveStockRequested(msg: unknown) {
+  const conn = await amqp.connect("amqp://localhost")
+  const ch = await conn.createConfirmChannel()
+
+  const exchange = "course.events.v1"
+  const rk = "fulfillment.reserve-stock-requested.v1"
+
+  await ch.assertExchange(exchange, "topic", { durable: true })
+
+  ch.publish(exchange, rk, Buffer.from(JSON.stringify(msg)), {
+    persistent: true,
+    contentType: "application/json",
+    messageId: (msg as any).messageId,
+    correlationId: (msg as any).correlationId
+  })
+
+  await ch.waitForConfirms()
+  await ch.close()
+  await conn.close()
+}
+```
+
+#### Consumo + idempotencia (conceptual)
+
+La entrega será “al menos una vez”, así que el consumidor debe deduplicar (Inbox) antes de tocar el dominio:
+
+```ts
+import amqp from "amqplib"
+
+async function startConsumer() {
+  const conn = await amqp.connect("amqp://localhost")
+  const ch = await conn.createChannel()
+
+  const exchange = "course.events.v1"
+  const queue = "inventory.reserve_stock_requested.v1"
+  const rk = "fulfillment.reserve-stock-requested.v1"
+
+  await ch.assertExchange(exchange, "topic", { durable: true })
+  await ch.assertQueue(queue, { durable: true })
+  await ch.bindQueue(queue, exchange, rk)
+
+  ch.prefetch(10)
+
+  await ch.consume(queue, async (m) => {
+    if (!m) return
+
+    const msg = JSON.parse(m.content.toString())
+    const messageId = m.properties.messageId ?? msg.messageId
+
+    const accepted = await inbox.tryAccept(String(messageId))
+    if (!accepted) {
+      ch.ack(m)
+      return
+    }
+
+    await handleUseCase(msg)
+    ch.ack(m)
+  })
+}
+```
 
 * **Fortalezas:** Enrutamiento flexible y complejo, priorización de mensajes, confirmaciones de entrega (acknowledgements), ideal para RPC sobre mensajería, buena interfaz de gestión.
 

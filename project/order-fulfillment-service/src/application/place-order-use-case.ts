@@ -4,8 +4,10 @@ import { LineId, OrderId, Quantity, Sku } from "../domain/value-objects";
 import {
   FulfillmentOrderRepositoryPort,
   IntegrationEventPublisherPort,
-  InventoryReservationsPort
+  ReservationRoutingRepositoryPort,
+  UnitOfWorkPort
 } from "./ports";
+import { OrderStatusProjector } from "./OrderStatusProjector";
 
 export type PlaceOrderCommand = Readonly<{
   orderId: string;
@@ -16,38 +18,48 @@ export type PlaceOrderCommand = Readonly<{
 export class PlaceOrderUseCase {
   constructor(
     private readonly repo: FulfillmentOrderRepositoryPort,
-    private readonly inventory: InventoryReservationsPort,
-    private readonly events: IntegrationEventPublisherPort
+    private readonly routingRepo: ReservationRoutingRepositoryPort,
+    private readonly events: IntegrationEventPublisherPort,
+    private readonly orderStatusProjector: OrderStatusProjector,
+    private readonly uow: UnitOfWorkPort
   ) {}
 
   async execute(cmd: PlaceOrderCommand): Promise<void> {
-    const order = FulfillmentOrder.place({
-      orderId: OrderId.of(cmd.orderId),
-      lines: cmd.lines.map((l) => ({
-        lineId: LineId.of(l.lineId),
-        sku: Sku.of(l.sku),
-        qty: Quantity.of(l.qty)
-      }))
-    });
+    await this.uow.runInTransaction(async () => {
+      const order = FulfillmentOrder.place({
+        orderId: OrderId.of(cmd.orderId),
+        lines: cmd.lines.map((l) => ({
+          lineId: LineId.of(l.lineId),
+          sku: Sku.of(l.sku),
+          qty: Quantity.of(l.qty)
+        }))
+      });
 
-    order.requestReservation(cmd.reservationId);
-    await this.repo.save(order);
+      order.requestReservation(cmd.reservationId);
+      await this.repo.save(order);
 
-    const reserveEvent: IntegrationEvent<
-      "ReserveStockRequested",
-      { reservationId: string; lines: Array<{ sku: string; qty: number }> }
-    > = {
-      type: "ReserveStockRequested",
-      version: 1,
-      occurredAt: nowIso(),
-      payload: {
+      await this.routingRepo.save({
         reservationId: cmd.reservationId,
-        lines: cmd.lines.map((l) => ({ sku: l.sku, qty: l.qty }))
-      }
-    };
+        orderId: cmd.orderId,
+        lineBySku: Object.fromEntries(cmd.lines.map((l) => [l.sku, l.lineId]))
+      });
 
-    await this.inventory.requestReservation(reserveEvent.payload);
-    await this.events.publish(reserveEvent);
+      await this.orderStatusProjector.project(order);
+
+      const reserveEvent: IntegrationEvent<
+        "ReserveStockRequested",
+        { reservationId: string; lines: Array<{ sku: string; qty: number }> }
+      > = {
+        type: "ReserveStockRequested",
+        version: 1,
+        occurredAt: nowIso(),
+        payload: {
+          reservationId: cmd.reservationId,
+          lines: cmd.lines.map((l) => ({ sku: l.sku, qty: l.qty }))
+        }
+      };
+
+      await this.events.publish(reserveEvent);
+    });
   }
 }
-

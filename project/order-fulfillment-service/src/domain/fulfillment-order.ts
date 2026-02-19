@@ -30,6 +30,61 @@ export class FulfillmentOrder extends AggregateRoot {
     super();
   }
 
+  static fromSnapshot(snapshot: {
+    orderId: string;
+    status: FulfillmentOrderStatus;
+    reservationId?: string;
+    lines: Array<{
+      lineId: LineId;
+      sku: Sku;
+      qty: Quantity;
+      reservationStatus: LineReservationStatus;
+      rejectionReason?: string;
+    }>;
+  }): FulfillmentOrder {
+    const order = new FulfillmentOrder(OrderId.of(snapshot.orderId));
+    order.status = snapshot.status;
+    order.reservationId = snapshot.reservationId;
+
+    for (const l of snapshot.lines) {
+      order.lines.set(l.lineId.toString(), {
+        lineId: l.lineId,
+        sku: l.sku,
+        qty: l.qty,
+        reservationStatus: l.reservationStatus,
+        rejectionReason: l.rejectionReason
+      });
+    }
+
+    return order;
+  }
+
+  toSnapshot(): {
+    orderId: string;
+    status: FulfillmentOrderStatus;
+    reservationId?: string;
+    lines: Array<{
+      lineId: string;
+      sku: string;
+      qty: number;
+      reservationStatus: LineReservationStatus;
+      rejectionReason?: string;
+    }>;
+  } {
+    return {
+      orderId: this.id.toString(),
+      status: this.status,
+      reservationId: this.reservationId,
+      lines: Array.from(this.lines.values()).map((l) => ({
+        lineId: l.lineId.toString(),
+        sku: l.sku.toString(),
+        qty: l.qty.toNumber(),
+        reservationStatus: l.reservationStatus,
+        rejectionReason: l.rejectionReason
+      }))
+    };
+  }
+
   static place(params: {
     orderId: OrderId;
     lines: Array<{ lineId: LineId; sku: Sku; qty: Quantity }>;
@@ -175,4 +230,3 @@ export class FulfillmentOrder extends AggregateRoot {
     this.status = "RESERVATION_PENDING";
   }
 }
-

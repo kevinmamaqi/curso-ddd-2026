@@ -6,4 +6,3 @@
 - Preferimos ACL en Fulfillment para traducir payloads externos a VOs internos y evitar un “Conformist” por prisa.
 - Aceptamos consistencia eventual: el pedido entra en `RESERVATION_PENDING` y se confirma por eventos.
 - Próximo paso natural: Outbox/Inbox + retries + DLQ (se verá más adelante con CQRS/EDA).
-

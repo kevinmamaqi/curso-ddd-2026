@@ -1,76 +1,157 @@
-# Día 7 — Starter
+# Día 8 — EDA (Parte 1) · Guía de proyecto (estudiantes)
 
-Este directorio es el **punto de partida** para la sesión 7 (3 horas).  
-Tu objetivo es llevar este `project/` al estado final de la sesión 7, que está en:
+Partimos del **estado final del día 7**: ya existe un flujo distribuido con **Outbox + Inbox + contratos versionados**, pero el transporte es “punto a punto” (HTTP).
 
-- `.local/dia-07-referencia/`
+En **día 8**, el objetivo es **mover el transporte a un broker (RabbitMQ)** sin romper lo anterior:
 
-No copies/pegues: implementa los cambios aplicando los patrones vistos hoy.
+- Se mantiene: dominio + casos de uso + Inbox/Outbox + contratos.
+- Cambia: en vez de `fetch(...)` a endpoints de integración, publicamos/consumimos por **pub/sub**.
 
-## Dónde estamos (inicio día 7)
+Estado final de referencia: `.local/dia-08-referencia/`.
 
-- `inventory-service/` ya tiene CQRS incremental (read model `inventory_view`).
-- `order-fulfillment-service/` ya puede crear órdenes y pedir reserva de stock (hoy lo hace de forma síncrona vía HTTP).
+Contratos: `artifacts/03-integration-contracts.md`.
 
-## Objetivo del día 7
+## Por qué hacemos esto (conexión con EDA)
 
-- Reemplazar la integración síncrona por un flujo distribuido robusto:
-  - `order-fulfillment-service` publica `ReserveStockRequested` usando **Outbox**.
-  - `inventory-service` consume, reserva, y publica `StockReserved` / `StockReservationRejected` (también con Outbox).
-  - `order-fulfillment-service` consume resultados con **idempotencia** y proyecta un read model `order_status_view`.
+En `curso/dia-08/02-eda-fundamentos.md` trabajamos que EDA no es “solo usar un broker”: es separar **eventos** (lo que pasó) de **mensajes** (cómo viajan), y asumir entrega **al menos una vez** con idempotencia.
 
-Los contratos están en `artifacts/03-integration-contracts.md`.
+En día 7, ya resolvimos gran parte de lo difícil:
 
-## Checklist (orden sugerido)
+- durabilidad de publicación (Outbox)
+- tolerancia a duplicados (Inbox)
+- contratos versionados (Published Language)
 
-1. Outbox + publisher (polling) en `order-fulfillment-service`.
-2. Endpoint de integración en `inventory-service` para recibir `ReserveStockRequested`.
-3. Outbox + publisher (polling) en `inventory-service` para publicar resultados a fulfillment.
-4. Inbox + consumer en `order-fulfillment-service` para aplicar confirm/reject (usando ACL).
-5. Proyección `order_status_view` + query `GET /orders/:orderId/status`.
+Lo que falta para “EDA real” es que los bounded contexts no se llamen directamente: deben hablar a través de un **Event Broker** (RabbitMQ). Eso reduce acoplamiento temporal (si el otro servicio está caído, el flujo no desaparece) y permite escalar consumidores de forma independiente.
 
-## Guía de implementación (sin solución copiada)
+### Antes vs después (transporte)
 
-Usa esta guía como “ruta”. El objetivo es que tú escribas el código, no que lo pegues.
+```mermaid
+flowchart LR
+  subgraph D7["Día 7 (HTTP)"]
+    F7["order-fulfillment-service"] -->|POST /integration/reserve-stock-requested| I7["inventory-service"]
+    I7 -->|POST /integration/inventory-events| F7
+  end
 
-### Paso A — `order-fulfillment-service`: Outbox para `ReserveStockRequested`
+  subgraph D8["Día 8 (RabbitMQ Pub/Sub)"]
+    F8["order-fulfillment-service"] -->|publish rk: fulfillment.reserve-stock-requested.v1| X["topic exchange: course.events.v1"]
+    X -->|bind| Q1["queue: inventory.reserve_stock_requested.v1"]
+    Q1 --> I8["inventory-service"]
 
-1. Crea persistencia Postgres + Unit of Work
-   - Necesitarás un cliente PG (y una forma simple de transacciones).
-   - La meta: poder hacer **en una misma TX**: `save(order)` + `enqueue(outboxMessage)`.
-2. Implementa Outbox
-   - Tabla `order_outbox_messages` con `id`, `destination`, `body`, `created_at`, `sent_at`.
-   - Repo con `enqueue(...)`, `getUnsent(...)`, `markSent(...)`.
-3. Cambia el publisher de eventos de integración
-   - En vez de “console log”, el publisher debe **encolar** en Outbox.
-4. Implementa el “worker” (polling)
-   - Loop periódico que lee `getUnsent()` y hace `POST` al destino.
-   - Si falla, no marques como enviado (se reintenta en el siguiente tick).
-5. Actualiza `PlaceOrderUseCase`
-   - Debe dejar de llamar directo a inventory de forma síncrona.
-   - Debe persistir la orden y publicar `ReserveStockRequested` vía outbox.
+    I8 -->|publish rk: inventory.stock-*.v1| X
+    X -->|bind| Q2["queue: fulfillment.inventory_results.v1"]
+    Q2 --> F8
+  end
+```
 
-### Paso B — `inventory-service`: consumir `ReserveStockRequested` con Inbox + publicar resultados con Outbox
+## Topología mínima (RabbitMQ)
 
-1. Crea endpoint de integración
-   - `POST /integration/reserve-stock-requested`
-2. Añade Inbox (idempotencia)
-   - Tabla `inventory_inbox_messages` y repo `tryAccept(messageId)` (dedupe).
-3. Caso de uso consumidor
-   - Para cada `{ sku, qty }`: ejecuta el command existente (`ReserveBookUseCase` / `ReserveInventoryUseCase`).
-   - Publica resultado por línea: `StockReserved` o `StockReservationRejected`.
-4. Añade Outbox + worker (polling)
-   - Igual idea que en fulfillment, pero publicando hacia fulfillment.
+- Exchange (topic): `course.events.v1`
+- Routing keys:
+  - `fulfillment.reserve-stock-requested.v1`
+  - `inventory.stock-reserved.v1`
+  - `inventory.stock-rejected.v1`
+- Queues:
+  - `inventory.reserve_stock_requested.v1`
+  - `fulfillment.inventory_results.v1`
 
-### Paso C — `order-fulfillment-service`: consumir resultados + proyección `order_status_view`
+## Wiring (2 tareas) — conecta primero, implementa después
 
-1. Endpoint de integración
-   - `POST /integration/inventory-events`
-2. Inbox (idempotencia)
-   - Tabla `order_inbox_messages` y `tryAccept(messageId)`.
-3. Traducción (ACL)
-   - Usa `src/application/acl-inventory-translator.ts` para mapear `sku -> lineId`.
-   - Para esto, normalmente necesitas persistir el “routing” (por ejemplo: `reservationId -> lineBySku`).
-4. Aplica el resultado en el agregado y proyecta
-   - `confirmLineReservation(...)` / `rejectLineReservation(...)`
-   - Proyección a `order_status_view` (read model) y endpoint `GET /orders/:orderId/status`.
+### Tarea 1 — Wire “Outbox → RabbitMQ” (productores)
+
+Idea: tu Outbox sigue guardando mensajes, pero ahora el “worker” los publica al exchange usando:
+
+- `routingKey = destination` (guardado en la outbox)
+- `messageId`/`correlationId` como propiedades AMQP
+- confirm channel (`waitForConfirms`) antes de marcar `sent_at`
+
+Esto conecta directamente con `curso/dia-08/02-eda-fundamentos.md`:
+- **confirm channel** ≈ “publicación con confirmación” (el broker confirma que aceptó el mensaje)
+- **at-least-once**: aunque publiques con confirm, puede haber duplicados → Inbox sigue siendo obligatorio
+
+Boilerplate (en cada servicio, en `main.ts`):
+
+```ts
+const publisher = container.resolve("outboxPublisher") // OutboxRabbitPublisher
+await publisher.start({ intervalMs: 500 })
+
+app.addHook("onClose", async () => {
+  await publisher.stop()
+})
+```
+
+Archivos a modificar (productores):
+
+- `order-fulfillment-service/src/infra/events/OutboxRabbitPublisher.ts` (nuevo worker: outbox → exchange)
+- `order-fulfillment-service/src/infra/messaging/rabbitmq.ts` (helpers: connect/assertExchange/confirm channel)
+- `order-fulfillment-service/src/config/config.ts` (agregar `RABBITMQ_URL`, `RABBITMQ_EXCHANGE`)
+- `order-fulfillment-service/src/infra/events/OutboxIntegrationEventPublisher.ts` (guardar `destination = routingKey`)
+- `order-fulfillment-service/main.ts` (registrar y arrancar el publisher)
+
+- `inventory-service/src/infra/events/OutboxRabbitPublisher.ts` (nuevo worker)
+- `inventory-service/src/infra/messaging/rabbitmq.ts` (helpers)
+- `inventory-service/src/config/config.ts` (agregar `RABBITMQ_URL`, `RABBITMQ_EXCHANGE`)
+- `inventory-service/src/infra/events/InventoryIntegrationEventsPublisher.ts` (guardar `destination = routingKey`)
+- `inventory-service/main.ts` (registrar y arrancar el publisher)
+
+### Tarea 2 — Wire “RabbitMQ → Use Case” (consumidores)
+
+Idea: creas un consumer por bounded context, bindeado al exchange con las routing keys correctas, y delegas a tu use case. El use case ya hace idempotencia (Inbox), así que el consumer:
+
+- parsea JSON
+- llama `useCase.execute(message)`
+- hace `ack` si ok, `nack(requeue=false)` si error (luego DLQ en día 9)
+
+Boilerplate (en cada servicio, en `main.ts`):
+
+```ts
+const consumer = container.resolve("consumer") // p.ej. ReserveStockRequestedRabbitConsumer / InventoryResultsRabbitConsumer
+await consumer.start()
+
+app.addHook("onClose", async () => {
+  await consumer.stop()
+})
+```
+
+Archivos a modificar (consumidores):
+
+- `inventory-service/src/infra/messaging/ReserveStockRequestedRabbitConsumer.ts`
+  - consume `fulfillment.reserve-stock-requested.v1`
+  - llama a `inventory-service/src/application/HandleReserveStockRequestedUseCase.ts`
+- `inventory-service/main.ts` (registrar/arrancar el consumer)
+
+- `order-fulfillment-service/src/infra/messaging/InventoryResultsRabbitConsumer.ts`
+  - consume `inventory.stock-*.v1`
+  - llama a `order-fulfillment-service/src/application/HandleInventoryIntegrationEventUseCase.ts`
+- `order-fulfillment-service/main.ts` (registrar/arrancar el consumer)
+
+## Implementación (detalles) — lo que debes construir
+
+### A) Publishers (Outbox polling)
+
+1. Añade `amqplib` y config:
+   - `RABBITMQ_URL` (default `amqp://localhost`)
+   - `RABBITMQ_EXCHANGE` (default `course.events.v1`)
+2. Implementa `OutboxRabbitPublisher`:
+   - abre conexión + confirm channel
+   - `assertExchange(exchange, "topic")`
+   - hace polling `getUnsent()`, `publish(...)`, `waitForConfirms()`, `markSent(id)`
+
+### B) Consumers (RabbitMQ)
+
+Implementa un consumer por lado:
+
+- **Inventory** consume `fulfillment.reserve-stock-requested.v1` y llama a `HandleReserveStockRequestedUseCase`.
+- **Fulfillment** consume `inventory.stock-*.v1` y llama a `HandleInventoryIntegrationEventUseCase`.
+
+### C) Routing keys desde publishers de integración
+
+Alinea `destination` (outbox) a routing keys:
+
+- Fulfillment publica: `destination = "fulfillment.reserve-stock-requested.v1"`
+- Inventory publica: `destination = "inventory.stock-reserved.v1"` o `inventory.stock-rejected.v1`
+
+## Cómo probar (local)
+
+1. Levanta Postgres + RabbitMQ (usa `.local/dia-08-referencia/docker-compose.yaml` como plantilla).
+2. Corre ambos servicios (`npm install`, `npm start`).
+3. Crea una orden (`POST /orders`) y observa que el flujo progresa por eventos.

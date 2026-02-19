@@ -3,10 +3,12 @@ import { PlaceOrderCommand, PlaceOrderUseCase } from "../../application/place-or
 import { FulfillmentOrderRepositoryPort } from "../../application/ports";
 import { OrderId } from "../../domain/value-objects";
 import { mapErrorToHttpStatus } from "./errorMapper";
+import { GetOrderStatusQuery } from "../../application/GetOrderStatusQuery";
 
 export type OrderRouterDeps = {
   placeOrderUseCase: PlaceOrderUseCase;
   repo: FulfillmentOrderRepositoryPort;
+  getOrderStatusQuery: GetOrderStatusQuery;
 };
 
 export const orderRouter: FastifyPluginAsync<{ deps: OrderRouterDeps }> = async (
@@ -39,5 +41,17 @@ export const orderRouter: FastifyPluginAsync<{ deps: OrderRouterDeps }> = async 
       return mapErrorToHttpStatus(app, err, reply);
     }
   });
-};
 
+  app.get("/orders/:orderId/status", async (request, reply) => {
+    try {
+      const { orderId } = request.params as { orderId: string };
+      const status = await options.deps.getOrderStatusQuery.execute({ orderId });
+      if (!status) {
+        return reply.status(404).send({ code: "NOT_FOUND", message: "Order status not found" });
+      }
+      return reply.send(status);
+    } catch (err) {
+      return mapErrorToHttpStatus(app, err, reply);
+    }
+  });
+};

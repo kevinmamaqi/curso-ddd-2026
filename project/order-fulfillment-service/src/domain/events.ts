@@ -35,6 +35,12 @@ export type IntegrationEvent<TType extends string, TPayload> = Readonly<{
   payload: TPayload;
 }>;
 
+export type IntegrationMessage<TEvent extends IntegrationEvent<string, unknown>> = Readonly<{
+  messageId: string;
+  correlationId: string;
+  event: TEvent;
+}>;
+
 export type InventoryIntegrationEvents =
   | IntegrationEvent<
       "StockReserved",
@@ -48,4 +54,3 @@ export type InventoryIntegrationEvents =
 export function nowIso(): IsoDateString {
   return new Date().toISOString();
 }
-

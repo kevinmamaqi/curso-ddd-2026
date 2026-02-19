@@ -10,6 +10,12 @@ import { BookEventsPublisher } from './src/infra/events/BookEventsPublisherAdapt
 import { InventoryViewRepositoryPostgres } from './src/infra/repository/InventoryViewRepositoryPostgres'
 import { InventoryViewProjector } from './src/application/InventoryViewProjector'
 import { GetInventoryBySkuQuery } from './src/application/GetInventoryBySkuQuery'
+import { OutboxRepositoryPostgres } from './src/infra/repository/OutboxRepositoryPostgres'
+import { InboxRepositoryPostgres } from './src/infra/repository/InboxRepositoryPostgres'
+import { OutboxHttpPublisher } from './src/infra/events/OutboxHttpPublisher'
+import { InventoryIntegrationEventsPublisher } from './src/infra/events/InventoryIntegrationEventsPublisher'
+import { integrationRouter } from './src/infra/http/integrationRouter'
+import { HandleReserveStockRequestedUseCase } from './src/application/HandleReserveStockRequestedUseCase'
 
 async function start() {
     const config = loadConfig()
@@ -26,10 +32,17 @@ async function start() {
         bookEvents: asClass(BookEventsPublisher).singleton(),
         reserveBookUseCase: asClass(ReserveBookUseCase).singleton(),
         getInventoryBySkuQuery: asClass(GetInventoryBySkuQuery).singleton(),
+        outboxRepo: asClass(OutboxRepositoryPostgres).singleton(),
+        inboxRepo: asClass(InboxRepositoryPostgres).singleton(),
+        outboxPublisher: asClass(OutboxHttpPublisher).singleton(),
+        integrationEvents: asClass(InventoryIntegrationEventsPublisher).singleton(),
+        handleReserveStockRequestedUseCase: asClass(HandleReserveStockRequestedUseCase).singleton(),
     })
 
     await container.resolve<BookRepositoryPostgres>("bookRepo").initSchema()
     await container.resolve<InventoryViewRepositoryPostgres>("inventoryViewRepo").initSchema()
+    await container.resolve<OutboxRepositoryPostgres>("outboxRepo").initSchema()
+    await container.resolve<InboxRepositoryPostgres>("inboxRepo").initSchema()
 
     const app = Fastify({ logger: true })
     app.register(healthRoutes)
@@ -37,8 +50,15 @@ async function start() {
         reserveBookUseCase: container.resolve("reserveBookUseCase"),
         getInventoryBySkuQuery: container.resolve("getInventoryBySkuQuery"),
     } })
+    app.register(integrationRouter, { deps: {
+        handleReserveStockRequestedUseCase: container.resolve("handleReserveStockRequestedUseCase"),
+    } })
+
+    const publisher = container.resolve<OutboxHttpPublisher>("outboxPublisher")
+    publisher.start({ intervalMs: 500 })
 
     app.addHook("onClose", async () => {
+        publisher.stop()
         await dbClient.disconnect()
     })
 
