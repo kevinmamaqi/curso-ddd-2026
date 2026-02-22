@@ -15,7 +15,7 @@ import { gatewayRoutes } from "./src/infra/http/routes";
 
 async function start() {
   const config = loadConfig();
-  const app = Fastify({ logger: true });
+  const app = Fastify({ logger: { level: "info" } });
 
   const inventory =
     config.downstreamTransport === "grpc"

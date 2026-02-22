@@ -4,10 +4,32 @@ import { BookRepositoryPort } from "./ports/BookRepositoryPort"
 import { Book } from "../domain/entities/BookStock"
 import { ReserveInventoryCommand, ReserveInventoryUseCase } from "./ReserveInventoryUseCase"
 import { BookEventsPublisherPort } from "./ports/BookEventsPublisherPort"
-import { InventoryViewRepositoryInMemory } from "../infra/repository/InventoryViewRepositoryInMemory"
+import {
+  InventoryView,
+  InventoryViewListFilters,
+  InventoryViewRepositoryPort,
+} from "./ports/InventoryViewRepositoryPort"
 import { InventoryViewProjector } from "./InventoryViewProjector"
 import { ReservationRepositoryPort } from "./ports/ReservationRepositoryPort"
 import { UnitOfWorkPort } from "./ports/UnitOfWorkPort"
+
+class InventoryViewRepositoryMock implements InventoryViewRepositoryPort {
+  private readonly views = new Map<string, InventoryView>()
+
+  async initSchema(): Promise<void> {}
+
+  async upsert(view: InventoryView): Promise<void> {
+    this.views.set(view.sku, view)
+  }
+
+  async findBySku(sku: string): Promise<InventoryView | null> {
+    return this.views.get(sku) ?? null
+  }
+
+  async list(_filters: InventoryViewListFilters): Promise<InventoryView[]> {
+    return Array.from(this.views.values())
+  }
+}
 
 class BookRepositoryMock implements BookRepositoryPort {
   constructor(private readonly book: Book) {}
@@ -71,7 +93,7 @@ describe("ReserveInventoryUseCase", () => {
     const repo = new BookRepositoryMock(book)
     const events = new BookEventsPublisherMock()
     const reservationRepo = new ReservationRepositoryMock()
-    const viewRepo = new InventoryViewRepositoryInMemory()
+    const viewRepo = new InventoryViewRepositoryMock()
     const projector = new InventoryViewProjector(viewRepo)
     const uow = new UnitOfWorkMock()
     const uc = new ReserveInventoryUseCase(repo, reservationRepo, events, projector, uow)

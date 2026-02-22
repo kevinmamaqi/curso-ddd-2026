@@ -14,7 +14,7 @@ import { OrderId } from "../domain/value-objects";
 import { IntegrationEvent } from "../domain/events";
 import { OrderStatusProjector } from "./OrderStatusProjector";
 
-class InMemoryRepo implements FulfillmentOrderRepositoryPort {
+class FakeFulfillmentOrderRepo implements FulfillmentOrderRepositoryPort {
   private readonly items = new Map<string, FulfillmentOrder>();
 
   async getById(id: OrderId): Promise<FulfillmentOrder | null> {
@@ -34,7 +34,7 @@ class FakePublisher implements IntegrationEventPublisherPort {
   }
 }
 
-class InMemoryRoutingRepo implements ReservationRoutingRepositoryPort {
+class FakeRoutingRepo implements ReservationRoutingRepositoryPort {
   public saved: ReservationRouting[] = [];
   private readonly items = new Map<string, ReservationRouting>();
 
@@ -48,7 +48,7 @@ class InMemoryRoutingRepo implements ReservationRoutingRepositoryPort {
   }
 }
 
-class InMemoryOrderStatusViewRepo implements OrderStatusViewRepositoryPort {
+class FakeOrderStatusViewRepo implements OrderStatusViewRepositoryPort {
   public upserts: OrderStatusView[] = [];
   private readonly items = new Map<string, OrderStatusView>();
 
@@ -75,10 +75,10 @@ class FakeUow implements UnitOfWorkPort {
 
 describe("PlaceOrderUseCase", () => {
   it("places an order and publishes ReserveStockRequested", async () => {
-    const repo = new InMemoryRepo();
-    const routingRepo = new InMemoryRoutingRepo();
+    const repo = new FakeFulfillmentOrderRepo();
+    const routingRepo = new FakeRoutingRepo();
     const events = new FakePublisher();
-    const orderStatusViewRepo = new InMemoryOrderStatusViewRepo();
+    const orderStatusViewRepo = new FakeOrderStatusViewRepo();
     const orderStatusProjector = new OrderStatusProjector(orderStatusViewRepo);
     const uow = new FakeUow();
 

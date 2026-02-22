@@ -27,7 +27,6 @@ import { GetReservationsByReservationIdQuery } from "./src/application/GetReserv
 import { HandleReleaseReservationRequestedUseCase } from "./src/application/HandleReleaseReservationRequestedUseCase";
 import { ReleaseReservationRequestedRabbitConsumer } from "./src/infra/messaging/ReleaseReservationRequestedRabbitConsumer";
 import { InventoryGrpcServer } from "./src/infra/grpc/InventoryGrpcServer";
-import pino from "pino";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -80,14 +79,14 @@ async function start() {
     await container.resolve<OutboxRepositoryPostgres>("outboxRepo").initSchema()
     await container.resolve<InboxRepositoryPostgres>("inboxRepo").initSchema()
 
-    const logger =
+    const loggerConfig =
         config.logFile
             ? (() => {
                 fs.mkdirSync(path.dirname(config.logFile as string), { recursive: true })
-                return pino({}, pino.destination({ dest: config.logFile as string, sync: false }))
+                return { level: "info" as const, file: config.logFile }
             })()
-            : true
-    const app = Fastify({ logger })
+            : { level: "info" as const }
+    const app = Fastify({ logger: loggerConfig })
     app.register(healthRoutes)
     app.register(bookStockRouter, { deps: {
         reserveBookUseCase: container.resolve("reserveBookUseCase"),

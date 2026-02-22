@@ -24,7 +24,6 @@ import { UnitOfWorkPostgres } from "./src/infra/repository/UnitOfWorkPostgres";
 import { InventoryResultsRabbitConsumer } from "./src/infra/messaging/InventoryResultsRabbitConsumer";
 import { startOtel } from "./src/infra/observability/otel";
 import { FulfillmentGrpcServer } from "./src/infra/grpc/FulfillmentGrpcServer";
-import pino from "pino";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -72,14 +71,13 @@ async function start() {
   await container.resolve<ReservationRoutingRepositoryPostgres>("routingRepo").initSchema();
   await container.resolve<OrderStatusViewRepositoryPostgres>("orderStatusViewRepo").initSchema();
 
-  const logger =
-    config.logFile
-      ? (() => {
-          fs.mkdirSync(path.dirname(config.logFile as string), { recursive: true });
-          return pino({}, pino.destination({ dest: config.logFile as string, sync: false }));
-        })()
-      : true;
-  const app = Fastify({ logger });
+  const loggerConfig = config.logFile
+    ? (() => {
+        fs.mkdirSync(path.dirname(config.logFile as string), { recursive: true });
+        return { level: "info" as const, file: config.logFile };
+      })()
+    : { level: "info" as const };
+  const app = Fastify({ logger: loggerConfig });
 
   app.register(healthRoutes);
   app.register(orderRouter, {
