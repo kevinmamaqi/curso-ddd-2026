@@ -40,3 +40,35 @@
 | 17:20–17:50 | Troubleshooting | Diagnóstico: lag, timeouts, saturación y errores. |
 | 17:50–18:30 | Observabilidad en mensajería | Métricas, logs correlados y trazabilidad. |
 | 18:30–19:00 | Taller | Simular fallos y verificar métricas/logs. |
+
+---
+
+## Aplicado al proyecto del curso (lo que haremos hoy)
+
+Esta sesión es una continuación directa de la sesión 8: ya tenemos el **flujo de eventos** (Outbox/Inbox + RabbitMQ) y hoy lo hacemos **resiliente** y **observable**.
+
+> Si todavía estás en el transporte HTTP (Outbox → `fetch(...)`), primero completa el wiring de la sesión 8 en `project/README.md` y vuelve aquí.
+
+### Wiring 1: Resiliencia (DLX/DLQ + retry con delay)
+
+Objetivo: que los consumidores puedan manejar errores **transitorios** (reintentos con delay/backoff) y aislar errores **permanentes** (DLQ).
+
+Archivos típicos a tocar/crear en `project/`:
+
+- `project/inventory-service/src/infra/messaging/rabbitmq.ts` (topología: exchange/colas, DLX, retry-queues)
+- `project/order-fulfillment-service/src/infra/messaging/rabbitmq.ts` (lo mismo para sus colas)
+- `project/inventory-service/main.ts` (arrancar consumer(s), `prefetch`, ack/nack)
+- `project/order-fulfillment-service/main.ts` (arrancar consumer(s))
+- `project/inventory-service/src/config/config.ts` (variables: `RABBITMQ_URL`, `RABBITMQ_EXCHANGE`, `RABBITMQ_DLX`)
+- `project/order-fulfillment-service/src/config/config.ts` (variables: `RABBITMQ_URL`, `RABBITMQ_EXCHANGE`, `RABBITMQ_DLX`)
+
+### Wiring 2: Observabilidad (OTel + correlación)
+
+Objetivo: poder responder “¿qué pasó con este mensaje?” con trazas y métricas (por cola, por handler, por error).
+
+Archivos típicos a tocar/crear en `project/`:
+
+- `project/inventory-service/src/infra/observability/otel.ts` (nuevo: SDK + instrumentaciones)
+- `project/order-fulfillment-service/src/infra/observability/otel.ts` (nuevo)
+- `project/inventory-service/main.ts` (importar OTel lo primero)
+- `project/order-fulfillment-service/main.ts` (importar OTel lo primero)

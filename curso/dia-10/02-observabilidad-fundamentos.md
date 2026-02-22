@@ -13,7 +13,7 @@ Mapa rápido del tool‑chain (¿qué es cada cosa y para qué sirve?)
 | **OTEL Collector** *(opcional)* | Proxy/roteador que recibe telemetría, transforma y re‑exporta a uno o varios *back‑ends*.                                 | Desacopla tu app de la infraestructura de observabilidad; centraliza *sampling*, *batching* y seguridad. |
 | **Docker Compose**              | Orquestador local para levantar todo el stack rápidamente.                                                                | Nada de instalar cada pieza a mano; reproducible por los alumnos en cualquier OS.                        |
 
-> Nota: el stack base del repositorio (`project/docker-compose.yml`) levanta Prometheus + Grafana (además de Postgres/RabbitMQ). Para un stack completo con Loki/Tempo, usa `curso/dia-10/ejercicios/docker-compose.yml`.
+> Nota: en el proyecto del curso (`project/`) levantamos Postgres + RabbitMQ (ver `.local/dia-08-referencia/docker-compose.yaml` como referencia). Para un stack completo de observabilidad con Loki/Tempo/Prometheus/Grafana, usa `curso/dia-10/ejercicios/docker-compose.yml`.
 
 ### 0.1 Cómo se relacionan entre sí
 
@@ -129,30 +129,76 @@ flowchart LR
 
 _Explicación:_ La aplicación emite los tres tipos de señales, que son recolectadas por sus respectivos backends y luego visualizadas y correlacionadas en Grafana.
 
+---
+
+## Aplicado al proyecto del curso: observabilidad en flujos EDA (Outbox + RabbitMQ)
+
+En un sistema orientado a eventos, “ver” el sistema significa poder responder:
+
+- ¿Qué **comando** originó este evento? (`correlationId`)
+- ¿Cuánto tardó el flujo end‑to‑end? (**trace**)
+- ¿En qué cola se quedó atascado? (**métricas**)
+- ¿Por qué terminó en DLQ? (**logs + headers `x-death`**)
+
+**Definiciones útiles:**
+
+- **`correlationId`:** id funcional del flujo (pedido/reserva). Lo defines tú y viaja entre servicios.
+- **`traceId`:** id técnico de una traza distribuida (OTel). Normalmente viaja como `traceparent`.
+- **Baggage:** pares clave/valor que viajan con el contexto de tracing (útil con cuidado).
+
+Diagrama mínimo (lo que buscamos ver en Tempo/Grafana):
+
+```mermaid
+sequenceDiagram
+  participant Client as Cliente
+  participant F as order-fulfillment-service
+  participant OFDB as Postgres (Fulfillment)
+  participant X as RabbitMQ (course.events.v1)
+  participant I as inventory-service
+  participant IDB as Postgres (Inventory)
+
+  Client->>F: POST /orders (correlationId)
+  F->>OFDB: TX: save(order) + outbox.enqueue(ReserveStockRequested)
+  F->>X: OutboxPublisher publish rk fulfillment.reserve-stock-requested.v1<br/>headers: traceparent + correlationId
+  X->>I: deliver message
+  I->>IDB: Inbox idempotency + reserve stock
+  I->>X: publish rk inventory.stock-reserved.v1 / inventory.stock-rejected.v1
+  X->>F: deliver result
+  F->>OFDB: Inbox + update read model/status
+```
+
+En la práctica, la instrumentación suele ser:
+
+- **Automática** para HTTP/DB, y
+- **manual** (o con instrumentación específica) en publish/consume AMQP para enriquecer spans con `routingKey`, `queue`, `messageId`.
+
 ### Ejercicio Práctico: Preparando el Entorno con Docker
 
-`docker-compose.yml`:
+`curso/dia-10/ejercicios/docker-compose.yml` (stack completo con Tempo/Loki):
 
 ```yaml
-version: "3.8"
 services:
   loki:
     image: grafana/loki:2.9.0
     ports:
       - "3100:3100"
     command: -config.file=/etc/loki/local-config.yaml
+
   promtail: # Agente para enviar logs a Loki
     image: grafana/promtail:2.9.0
     volumes:
       - /var/log:/var/log # O el path de logs de tus contenedores
-      - ./promtail-config.yml:/etc/promtail/config.yml
+      - ./promtail-local-config.yml:/etc/promtail/config.yml
+      - ./ej1/app.log:/app/app.log
     command: -config.file=/etc/promtail/config.yml
+
   prometheus:
     image: prom/prometheus:v2.47.0
     ports:
       - "9090:9090"
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml
+
   grafana:
     image: grafana/grafana:12.0.0
     ports:
@@ -162,6 +208,16 @@ services:
       - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
     volumes: # Para persistir dashboards y datasources
       - grafana-data:/var/lib/grafana
+
+  tempo:
+    image: grafana/tempo:2.7.2
+    command: ["-config.file=/etc/tempo.yaml"]
+    volumes:
+      - ./tempo-config.yml:/etc/tempo.yaml
+    ports:
+      - "3200:3200" # Tempo API
+      - "4317:4317" # OTLP gRPC
+      - "4318:4318" # OTLP HTTP
 
 volumes:
   grafana-data:
@@ -188,6 +244,14 @@ scrape_configs:
         labels:
           job: varlogs
           __path__: /var/log/*.log
+
+  - job_name: typescript-logger
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: typescript_logger
+          __path__: /app/app.log
 ```
 
 `prometheus.yml`:
@@ -209,13 +273,20 @@ scrape_configs:
   - job_name: promtail
     static_configs:
       - targets: ["promtail:9080"]
+
+  - job_name: "node-app"
+    metrics_path: "/metrics"
+    static_configs:
+      - targets: ["host.docker.internal:9464"]
 ```
 
 1. Levantar el Stack:
 
 ```bash
-docker-compose up -d
+docker compose up -d
 ```
+
+> En macOS/Windows, `host.docker.internal` funciona por defecto. En Linux, usa la IP del host o ejecuta la app dentro del compose.
 
 2.  Verificar Servicios:
 
@@ -299,36 +370,32 @@ graph LR
 
 **Ejercicio Práctico: Instrumentación Básica con OTEL en Node.js (15m):**
 
-_(Asumir una app Express simple en `ejercicio2-otel-node/app.js` dentro del repo clonado)._
+Usaremos el ejercicio ya incluido en este repo: `curso/dia-10/ejercicios/ej2` (Fastify + OTEL + métricas).
 
 1.  Navegar al directorio del ejercicio:
 
 ```bash
-cd ../ejercicio2-otel-node
+cd curso/dia-10/ejercicios
+npm install
 ```
 
-2.  Instalar dependencias de OTEL:
+2.  Verifica que el stack de observabilidad esté levantado (Tempo escucha OTLP en `4318`):
 
 ```bash
-npm install @opentelemetry/api @opentelemetry/sdk-node \
-@opentelemetry/auto-instrumentations-node \
-@opentelemetry/exporter-trace-otlp-http \
-# Opcional para exportar a Jaeger directamente: @opentelemetry/exporter-jaeger
-# Opcional para exportar métricas a Prometheus: @opentelemetry/exporter-prometheus
+docker compose up -d
 ```
 
-3.  Crear archivo `tracing.ts` (o similar) para configurar el SDK:
+3.  Revisa la configuración OTEL (ya existe): `curso/dia-10/ejercicios/ej2/tracing.ts`.
 
 ```typescript
 // tracing.ts
 import { NodeSDK } from "@opentelemetry/sdk-node";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
-import { OTLPMetricExporter } from "@opentelemetry/exporter-metrics-otlp-http";
 import { getNodeAutoInstrumentations } from "@opentelemetry/auto-instrumentations-node";
 import { resourceFromAttributes } from "@opentelemetry/resources";
 import { SemanticResourceAttributes } from "@opentelemetry/semantic-conventions";
 import { BatchSpanProcessor } from "@opentelemetry/sdk-trace-base";
-import { PeriodicExportingMetricReader } from "@opentelemetry/sdk-metrics";
+import { PrometheusExporter } from "@opentelemetry/exporter-prometheus";
 
 // Allow customization via env vars
 const serviceName = process.env.OTEL_SERVICE_NAME || "my-node-app-typescript";
@@ -339,9 +406,10 @@ const otlpEndpoint =
 const traceExporter = new OTLPTraceExporter({
   url: `${otlpEndpoint}/v1/traces`,
 });
-const metricExporter = new OTLPMetricExporter({
-  url: `${otlpEndpoint}/v1/metrics`,
-});
+const prometheusExporter = new PrometheusExporter(
+  { port: 9464, endpoint: "/metrics" },
+  () => console.log(`Metrics available at http://localhost:9464/metrics`)
+);
 
 // Initialize SDK with batching and auto-instrumentation
 export const sdk = new NodeSDK({
@@ -349,10 +417,7 @@ export const sdk = new NodeSDK({
     [SemanticResourceAttributes.SERVICE_NAME]: serviceName,
   }),
   traceExporter,
-  metricReader: new PeriodicExportingMetricReader({
-    exporter: metricExporter,
-    exportIntervalMillis: 60_000, // export metrics every minute
-  }),
+  metricReader: prometheusExporter,
   instrumentations: [getNodeAutoInstrumentations()],
   spanProcessor: new BatchSpanProcessor(traceExporter),
 });
@@ -374,7 +439,20 @@ process.on("SIGTERM", () => {
 });
 ```
 
-4.  Crear `app.ts` para cargar `tracing.ts` al inicio:
+4.  La app del ejercicio ya importa `./tracing` primero: `curso/dia-10/ejercicios/ej2/app.ts`.
+
+5.  Ejecuta la app:
+
+```bash
+OTEL_SERVICE_NAME=dia10-ej2 \
+OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 \
+npm run app
+```
+
+6.  Genera tráfico y mira:
+
+- Trazas: Grafana (Tempo) en `http://localhost:3000`
+- Métricas: `http://localhost:9464/metrics`
 
 ```typescript
 import "./tracing"; // ensure OTEL SDK is initialized
@@ -435,7 +513,7 @@ app
   });
 ```
 
-5.  Añadir Tempo al `docker-compose.yml` (si no estaba):
+5.  Tempo ya está incluido en `curso/dia-10/ejercicios/docker-compose.yml`. Si montas tu propio compose, añade este bloque:
 
 ```yaml
 # ... (otros servicios)
@@ -443,7 +521,7 @@ tempo:
   image: grafana/tempo:2.7.2
   command: ["-config.file=/etc/tempo.yaml"]
   volumes:
-    - ./tempo-config.yaml:/etc/tempo.yaml # Configuración básica de Tempo
+    - ./tempo-config.yml:/etc/tempo.yaml # Configuración básica de Tempo
   ports:
     - "3200:3200" # Tempo UI & API
     - "4317:4317" # OTLP gRPC
@@ -451,7 +529,7 @@ tempo:
     # - "14268:14268" # Jaeger HTTP (si se usa)
 ```
 
-_Y un `tempo-config.yaml` simple:_
+_Y un `tempo-config.yml` simple:_
 
 ```yaml
 server:
@@ -490,6 +568,70 @@ storage:
 
 ---
 
+## Aplicado al proyecto del curso: bootstrap OTEL por servicio
+
+Objetivo: que **cada servicio** exponga:
+
+- trazas OTLP a Tempo (`OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318`)
+- métricas Prometheus en un puerto distinto (para evitar colisión al correr 2 servicios)
+
+Boilerplate recomendado:
+
+1) Crear `otel.ts` por servicio:
+
+- `project/order-fulfillment-service/src/infra/observability/otel.ts`
+- `project/inventory-service/src/infra/observability/otel.ts`
+
+```ts
+import { NodeSDK } from "@opentelemetry/sdk-node";
+import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
+import { getNodeAutoInstrumentations } from "@opentelemetry/auto-instrumentations-node";
+import { resourceFromAttributes } from "@opentelemetry/resources";
+import { SemanticResourceAttributes } from "@opentelemetry/semantic-conventions";
+import { PrometheusExporter } from "@opentelemetry/exporter-prometheus";
+
+export async function startOtel(serviceName: string) {
+  const otlpBase =
+    process.env.OTEL_EXPORTER_OTLP_ENDPOINT ?? "http://localhost:4318";
+
+  const metricsPort = Number(process.env.METRICS_PORT) || 9464;
+  const prometheusExporter = new PrometheusExporter({
+    port: metricsPort,
+    endpoint: "/metrics",
+  });
+
+  const traceExporter = new OTLPTraceExporter({ url: `${otlpBase}/v1/traces` });
+
+  const sdk = new NodeSDK({
+    resource: resourceFromAttributes({
+      [SemanticResourceAttributes.SERVICE_NAME]: serviceName,
+    }),
+    traceExporter,
+    metricReader: prometheusExporter,
+    instrumentations: [getNodeAutoInstrumentations()],
+  });
+
+  await sdk.start();
+  return sdk;
+}
+```
+
+2) Inicializar OTEL al principio de `main.ts` (antes de crear Fastify y antes de usar adaptadores):
+
+- `project/inventory-service/main.ts`
+- `project/order-fulfillment-service/main.ts`
+
+```ts
+import { startOtel } from "./src/infra/observability/otel";
+
+async function start() {
+  await startOtel("inventory-service");
+  // ... resto del bootstrap del servicio
+}
+```
+
+> Si ves que falta instrumentación de RabbitMQ, puedes añadir instrumentación específica o crear spans manuales en tus adaptadores AMQP (publish/consume).
+
 ## Parte 2: Implementación Práctica y Casos de Uso
 
 ### 4. Monitoreo y control de métricas en entornos de microservicios
@@ -526,87 +668,16 @@ _Explicación:_ Cada paso del journey puede generar métricas que ayudan a enten
 
 **Ejercicio Práctico: Instrumentar Métricas Custom y Crear Dashboard (20m):**
 
-1.  Instalar exportador de Prometheus para OTEL (si no se hizo):
+0. En este repo, la parte “infra” ya está preparada:
 
-```bash
-npm install @opentelemetry/exporter-prometheus @opentelemetry/sdk-metrics
-```
-
-2.  Modificar `tracing.ts` para añadir el exportador de métricas:
-
-```typescript
-// tracing.ts
-import { NodeSDK } from "@opentelemetry/sdk-node";
-import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
-import { OTLPMetricExporter } from "@opentelemetry/exporter-metrics-otlp-http";
-import { getNodeAutoInstrumentations } from "@opentelemetry/auto-instrumentations-node";
-import { resourceFromAttributes } from "@opentelemetry/resources";
-import { SemanticResourceAttributes } from "@opentelemetry/semantic-conventions";
-import { BatchSpanProcessor } from "@opentelemetry/sdk-trace-base";
-// import { PeriodicExportingMetricReader } from "@opentelemetry/sdk-metrics";
-import { PrometheusExporter } from "@opentelemetry/exporter-prometheus";
-
-// Environment-based configuration
-const SERVICE_NAME = process.env.OTEL_SERVICE_NAME || "my-node-app-typescript";
-const OTLP_ENDPOINT =
-  process.env.OTEL_EXPORTER_OTLP_ENDPOINT || "http://localhost:4318";
-
-// Trace exporter and processor
-const traceExporter = new OTLPTraceExporter({
-  url: `${OTLP_ENDPOINT}/v1/traces`,
-});
-const spanProcessor = new BatchSpanProcessor(traceExporter);
-
-// Metric exporter and reader
-const metricExporter = new OTLPMetricExporter({
-  url: `${OTLP_ENDPOINT}/v1/metrics`,
-});
-
-// Metric reader
-// const metricReader = new PeriodicExportingMetricReader({
-//   exporter: metricExporter,
-//   exportIntervalMillis: 60_000, // export metrics every minute
-// });
-
-// Prometheus Exporter
-const prometheusExporter = new PrometheusExporter(
-  { port: 9464, endpoint: "/metrics" },
-  () => console.log(`Metrics available at http://localhost:9464/metrics`)
-);
-
-// Initialize the SDK with both tracing and metrics
-export const sdk = new NodeSDK({
-  resource: resourceFromAttributes({
-    [SemanticResourceAttributes.SERVICE_NAME]: SERVICE_NAME,
-  }),
-  traceExporter,
-  spanProcessor,
-  metricReader: prometheusExporter,
-  instrumentations: [getNodeAutoInstrumentations()],
-});
-
-try {
-  sdk.start();
-  console.log("OpenTelemetry SDK started...");
-} catch (error) {
-  console.error("Error starting OpenTelemetry SDK:", error);
-}
-
-// Graceful shutdown
-process.on("SIGTERM", () => {
-  sdk
-    .shutdown()
-    .then(() => console.log("Tracing and metrics terminated"))
-    .catch((err) => console.error("Error terminating OTEL SDK", err))
-    .finally(() => process.exit(0));
-});
-```
+- Dependencias: `curso/dia-10/ejercicios/package.json`
+- Exportador Prometheus: `curso/dia-10/ejercicios/ej2/tracing.ts` (expone `http://localhost:9464/metrics`)
 
 _Nota:_ La configuración de métricas con OTEL puede ser un poco más compleja de integrar con `NodeSDK` que las trazas. Para el ejercicio, la configuración del `PrometheusExporter` y `MeterProvider` es clave. El `NodeSDK` debería idealmente manejar la inicialización del `MeterProvider`. Si no, el `MeterProvider` debe ser configurado y sus `Meter`s usados explícitamente.
 
-1.  Instrumentar una métrica de negocio en `app.js`:
+1.  Instrumentar una métrica de negocio en `curso/dia-10/ejercicios/ej2/app.ts`:
 
-```javascript
+```ts
 import "./tracing"; // ensure OTEL SDK is initialized
 import Fastify, { FastifyRequest, FastifyReply } from "fastify";
 import { trace, SpanStatusCode } from "@opentelemetry/api";

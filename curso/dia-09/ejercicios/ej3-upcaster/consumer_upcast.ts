@@ -2,7 +2,7 @@ import amqplib from "amqplib";
 import { upcastTaskAssigned, TaskAssignedV2 } from "./upcasters";
 
 (async () => {
-  const conn = await amqplib.connect("amqp://user:password@localhost:5672");
+  const conn = await amqplib.connect("amqp://localhost:5672");
   const channel = await conn.createChannel();
 
   const QUEUE = "task_assigned_queue";

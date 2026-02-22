@@ -50,5 +50,30 @@ export class OrderStatusViewRepositoryPostgres implements OrderStatusViewReposit
       updatedAt: new Date(row.updated_at).toISOString()
     };
   }
-}
 
+  async listByStatus(status?: string): Promise<OrderStatusView[]> {
+    const params: any[] = [];
+    const where: string[] = [];
+
+    if (status) {
+      params.push(status);
+      where.push(`status = $${params.length}`);
+    }
+
+    const sql = `
+      SELECT order_id, status, reservation_id, updated_at
+      FROM order_status_view
+      ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
+      ORDER BY updated_at DESC
+      LIMIT 200
+    `;
+
+    const result = await this.dbClient.query(sql, params);
+    return result.rows.map((row: any) => ({
+      orderId: String(row.order_id),
+      status: String(row.status),
+      reservationId: row.reservation_id ? String(row.reservation_id) : undefined,
+      updatedAt: new Date(row.updated_at).toISOString()
+    }));
+  }
+}

@@ -1,11 +1,13 @@
 import amqplib from "amqplib";
 
 (async () => {
-  const conn = await amqplib.connect("amqp://user:password@localhost:5672");
+  const conn = await amqplib.connect("amqp://localhost:5672");
   const channel = await conn.createChannel();
 
   const MAX_RETRIES = 3;
   const WORK_QUEUE = "work_queue";
+  const MAIN_EXCHANGE = "main_exchange";
+  const WORK_ROUTING_KEY = "work";
 
   await channel.consume(
     WORK_QUEUE,
@@ -26,7 +28,7 @@ import amqplib from "amqplib";
         if (attempt < MAX_RETRIES) {
           console.log(`Requeuing for retry ${attempt + 1}`);
           headers["x-attempt"] = attempt;
-          channel.publish("main_exchange", WORK_QUEUE, msg.content, {
+          channel.publish(MAIN_EXCHANGE, WORK_ROUTING_KEY, msg.content, {
             headers,
             persistent: true,
           });
@@ -40,5 +42,5 @@ import amqplib from "amqplib";
     { noAck: false }
   );
 
-  console.log("RetryConsumer is listening on work_queue");
+  console.log("RetryConsumer listening on", WORK_QUEUE);
 })();

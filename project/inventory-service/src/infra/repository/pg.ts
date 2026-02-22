@@ -25,4 +25,16 @@ export class DBClient {
     async query(query: string, params: any[]) {
         return await this.client.query(query, params);
     }
+
+    async transaction<T>(fn: () => Promise<T>): Promise<T> {
+        await this.query("BEGIN", [])
+        try {
+            const result = await fn()
+            await this.query("COMMIT", [])
+            return result
+        } catch (err) {
+            await this.query("ROLLBACK", [])
+            throw err
+        }
+    }
 }

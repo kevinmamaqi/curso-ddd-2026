@@ -31,12 +31,15 @@ export class LineId {
 }
 
 export class Sku {
-  private static readonly pattern = /^BOOK-\d{4}$/;
+  // Al final del curso, `inventory-service` usa UUID (bookId) como SKU.
+  // Mantén compatibilidad con el formato anterior del curso (BOOK-0001).
+  private static readonly pattern =
+    /^(BOOK-\d{4}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i;
   private constructor(private readonly value: string) {}
 
   static of(raw: string): Sku {
     if (!Sku.pattern.test(raw)) {
-      throw new Error("Sku must match BOOK-0001.");
+      throw new Error("Sku must match BOOK-0001 or a UUID.");
     }
     return new Sku(raw);
   }
@@ -60,4 +63,3 @@ export class Quantity {
     return this.value;
   }
 }
-

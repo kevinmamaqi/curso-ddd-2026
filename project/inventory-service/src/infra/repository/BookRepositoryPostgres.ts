@@ -2,6 +2,7 @@ import { BookRepositoryPort } from "../../application/ports/BookRepositoryPort";
 import { Book } from "../../domain/entities/BookStock";
 import { DBClient } from "./pg";
 import { toBookDomain } from "./transform";
+import { ReservationId } from "../../domain/va/ReservationId";
 
 
 export class BookRepositoryPostgres implements BookRepositoryPort {
@@ -18,10 +19,22 @@ export class BookRepositoryPostgres implements BookRepositoryPort {
     }
 
     async findById(id: string): Promise<Book | null> {
-        const res = await this.dbClient.query("SELECT * FROM books WHERE id = $1", [id]);
+        const res = await this.dbClient.query("SELECT * FROM books WHERE id = $1 FOR UPDATE", [id]);
         const row = res.rows[0];
         if (!row) return null;
-        return toBookDomain(row);
+        const book = toBookDomain(row);
+        const reservationRows = await this.dbClient.query(
+          `
+          SELECT reservation_id, qty
+          FROM inventory_reservations
+          WHERE sku = $1 AND released_at IS NULL
+          `,
+          [id]
+        );
+        for (const r of reservationRows.rows as any[]) {
+          book.hydrateReservation(ReservationId.of(String(r.reservation_id)), Number(r.qty));
+        }
+        return book;
     }
 
     async save(book: Book): Promise<void> {

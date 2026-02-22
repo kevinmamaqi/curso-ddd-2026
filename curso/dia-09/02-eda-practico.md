@@ -14,21 +14,25 @@ Hoy, nos centramos en la **robustez y la observabilidad** de estos sistemas, uti
 ```yaml
 services:
   rabbitmq:
-    image: rabbitmq:4.1-management # Usamos una versión con interfaz de gestión
-    container_name: eda_rabbitmq_dia2
+    image: rabbitmq:3-management-alpine # Interfaz de gestión (alineado con día 8)
+    container_name: eda_rabbitmq_dia09
     ports:
       - "5672:5672" # Puerto AMQP para la aplicación
       - "15672:15672" # Puerto para la interfaz de gestión web
-    environment:
-      - RABBITMQ_DEFAULT_USER=user
-      - RABBITMQ_DEFAULT_PASS=password
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq/
 volumes:
   rabbitmq_data:
 ```
 
-5. Interfaz de gestión de RabbitMQ: `http://localhost:15672` (user: `user`, pass: `password`) para ver exchanges, colas y mensajes.
+5. Interfaz de gestión de RabbitMQ: `http://localhost:15672` (user/pass por defecto: `guest`/`guest`) para ver exchanges, colas y mensajes.
+
+Si quieren ir directo a los scripts de los ejercicios:
+
+- Setup DLX: `npm run setup-dlx`
+- Producir 1 mensaje: `npm run producer`
+- Consumir (y forzar DLQ): `npm run consumer`
+- Consumidor con retries (demo): `npm run retry-consumer`
 
 ---
 
@@ -40,6 +44,14 @@ Distinguiremos dos tipos principales de fallos:
 
 - **Transitorios:** Errores temporales (ej. timeout de red, bloqueo momentáneo de BD). Estos suelen resolverse con reintentos.
 - **Permanentes:** Errores que no se resolverán reintentando con el mismo mensaje (ej. evento con formato corrupto, bug en el código del consumidor que no maneja un caso específico). Estos mensajes deben apartarse para no bloquear el procesamiento de otros.
+
+**Definiciones rápidas (para hablar el mismo idioma):**
+
+- **DLX (Dead-Letter Exchange):** exchange “destino” al que RabbitMQ re-publica mensajes que una cola marca como dead-letter (rechazados, expirados, etc.).
+- **DLQ (Dead-Letter Queue):** cola donde *terminan* esos mensajes dead-letter (normalmente bindeada al DLX).
+- **Poison message:** mensaje que “siempre falla” (por bug o datos inválidos) y, si no lo aislas, te bloquea el procesamiento.
+- **Redelivery:** reentrega de un mensaje (por `nack(requeue=true)`, por restart del consumidor, etc.). Sin idempotencia, esto duplica efectos.
+- **`x-death` header:** metadato que RabbitMQ añade cuando un mensaje pasa por dead-lettering; es clave para diagnosticar “cuántas veces” y “por qué” terminó en DLQ.
 
 ### 1.1 Poison Queues / Dead-Letter Exchanges (DLX):
 
@@ -82,6 +94,39 @@ await channel.assertQueue("work_queue", {
   deadLetterExchange: "dlx_exchange",
   // deadLetterRoutingKey: 'opcional_si_dlx_es_fanout_o_direct_sin_rk_especifico'
 });
+```
+
+**Aplicado al proyecto del curso (mismo concepto, nombres reales):**
+
+- Exchange principal (topic): `course.events.v1`
+- Colas:
+  - `inventory.reserve_stock_requested.v1`
+  - `fulfillment.inventory_results.v1`
+- DLX: `course.dlx.v1`
+- DLQs:
+  - `inventory.reserve_stock_requested.dlq`
+  - `fulfillment.inventory_results.dlq`
+
+Snippet de referencia (declaración mínima para una cola + DLQ):
+
+```ts
+// rabbitmq.ts (idea)
+await channel.assertExchange("course.events.v1", "topic", { durable: true });
+await channel.assertExchange("course.dlx.v1", "direct", { durable: true });
+
+await channel.assertQueue("inventory.reserve_stock_requested.v1", {
+  durable: true,
+  deadLetterExchange: "course.dlx.v1",
+  deadLetterRoutingKey: "inventory.reserve_stock_requested.dlq",
+});
+await channel.assertQueue("inventory.reserve_stock_requested.dlq", {
+  durable: true,
+});
+await channel.bindQueue(
+  "inventory.reserve_stock_requested.dlq",
+  "course.dlx.v1",
+  "inventory.reserve_stock_requested.dlq"
+);
 ```
 
 **Ejercicio:**
@@ -164,6 +209,41 @@ function handleNackWithRetry(
 
 **Nota importante para el ejercicio:** Para simular reintentos sin un sistema de delay complejo, haremos que el consumidor falle algunas veces y use `nack(msg, false, true)` para reencolar inmediatamente. Esto _no_ es una buena práctica en producción por el riesgo de bucles rápidos, pero nos permitirá ver el contador de intentos. El último intento usará `nack(msg, false, false)` para enviarlo a la DLX configurada.
 
+**Nota (patrón recomendado para producción, sin plugins): retry-queue con TTL**
+
+La forma habitual de tener *delay real* (sin `rabbitmq_delayed_message_exchange`) es: ante un fallo transitorio, el consumidor **ack** del original y **re-publica** el mensaje a una **cola de retry** con `messageTtl`. Esa cola tiene DLX apuntando de vuelta al exchange principal, así que cuando expira el TTL, el mensaje “vuelve” a la cola principal.
+
+```mermaid
+flowchart LR
+  X["course.events.v1 (topic)"]:::broker
+  Q["inventory.reserve_stock_requested.v1"]:::queue
+  R["inventory.reserve_stock_requested.retry.10s"]:::queue
+  DLX["course.dlx.v1 (direct)"]:::broker
+  DLQ["inventory.reserve_stock_requested.dlq"]:::queue
+
+  X -->|rk: fulfillment.reserve-stock-requested.v1| Q
+  Q --> C["consumer"]:::proc
+  C -->|transitorio: ack + publish| R
+  R -. TTL + dead-letter .-> X
+  C -->|permanente / max retries: nack(false)| DLX
+  DLX --> DLQ
+
+classDef broker fill:#ccf,stroke:#333,stroke-width:1px;
+classDef queue fill:#efe,stroke:#333,stroke-width:1px;
+classDef proc fill:#ffe,stroke:#333,stroke-width:1px;
+```
+
+Snippet de referencia (declaración de la retry-queue):
+
+```ts
+await channel.assertQueue("inventory.reserve_stock_requested.retry.10s", {
+  durable: true,
+  messageTtl: 10_000,
+  deadLetterExchange: "course.events.v1",
+  deadLetterRoutingKey: "fulfillment.reserve-stock-requested.v1",
+});
+```
+
 **Ejercicio: Implementando Consumidor con Reintentos y DLX:**
 
 Modificar el consumidor para que simule fallos transitorios, reintente un número limitado de veces, y luego envíe el mensaje a la DLQ.
@@ -171,14 +251,14 @@ Modificar el consumidor para que simule fallos transitorios, reintente un númer
 **Pasos:**
 
 1. Asegurarse de tener la `work_queue` y la `dlx_exchange`/`dead_letter_queue` del ejercicio anterior configuradas.
-2. En un nuevo archivo (`ejercicios/ej2-retry/consumer_retry.ts`), implementen un consumidor para `work_queue`.
+2. En `ejercicios/ej2-retry/consumer_retry.ts` (ya existe en el repo), implementen un consumidor para `work_queue`.
 3. Dentro del callback del consumidor:
 
 - Obtengan el número de intento actual de `msg.properties.headers['x-attempt']` (inicien en 1 si no existe).
 - Simulen un fallo (ej. `throw new Error('Simulated transient error')`).
 - Si `attempt < MAX_RETRIES` (ej. `MAX_RETRIES = 3`):
   - Incrementen `x-attempt` en las cabeceras.
-  - Hagan `channel.basicPublish(msg.fields.exchange, msg.fields.routingKey, msg.content, { headers: msg.properties.headers })` para republicar el mensaje con el intento actualizado.
+  - Hagan `channel.publish("main_exchange", "work", msg.content, { headers })` para republicar el mensaje con el intento actualizado.
   - Luego, hagan `channel.ack(msg)` para confirmar el mensaje original (ya que lo hemos republicado).
   - "Esto simula un sistema de reintento donde el mensaje se vuelve a encolar para ser procesado más tarde (idealmente con delay)."
 - Si `attempt >= MAX_RETRIES`:
@@ -191,92 +271,32 @@ Modificar el consumidor para que simule fallos transitorios, reintente un númer
 **Snippet de ayuda (consumidor):**
 
 ```typescript
-// ejercicios/ej2-retry/consumer_retry.ts
-// ... (conexión amqplib) ...
+// ejercicios/ej2-retry/consumer_retry.ts (versión corta)
 const MAX_RETRIES = 3;
-const WORK_QUEUE = "work_queue"; // Asegúrate que esta cola tiene DLX configurado
+const WORK_QUEUE = "work_queue";
+const MAIN_EXCHANGE = "main_exchange";
+const WORK_ROUTING_KEY = "work";
 
-channel.consume(
+await channel.consume(
   WORK_QUEUE,
   async (msg) => {
-    if (msg) {
-      let headers = msg.properties.headers || {};
-      let attempt = (headers["x-attempt"] || 0) + 1;
-      console.log(
-        `Processing message, attempt ${attempt}`,
-        msg.content.toString()
-      );
+    if (!msg) return;
+    const headers = msg.properties.headers || {};
+    const attempt = (headers["x-attempt"] || 0) + 1;
 
-      try {
-        if (attempt <= MAX_RETRIES) {
-          // Simulamos fallo para los primeros MAX_RETRIES intentos
-          throw new Error(`Simulated processing error on attempt ${attempt}`);
-        }
-        // Si attempt > MAX_RETRIES, se supone que se procesaría correctamente
-        // pero para este ejercicio, lo que queremos es que después de MAX_RETRIES intentos fallidos
-        // el mensaje vaya a la DLQ.
-        // La lógica de reintento está en el catch.
-        // Si llegamos aquí sin error (ej. si modificamos para que el intento 4 sí funcione):
-        console.log("Message processed successfully after retries (if any)!");
+    try {
+      if (attempt <= MAX_RETRIES) throw new Error("Simulated transient error");
+      channel.ack(msg);
+    } catch {
+      if (attempt < MAX_RETRIES) {
+        headers["x-attempt"] = attempt;
+        channel.publish(MAIN_EXCHANGE, WORK_ROUTING_KEY, msg.content, {
+          headers,
+          persistent: true,
+        });
         channel.ack(msg);
-      } catch (error) {
-        console.error(error.message);
-        if (attempt < MAX_RETRIES) {
-          console.log(`Re-publishing message for attempt ${attempt + 1}`);
-          headers["x-attempt"] = attempt; // El próximo intento será attempt+1
-          // El header se setea con el intento actual que falló.
-          // El consumidor que reciba el mensaje republicado verá 'x-attempt'
-          // y lo incrementará.
-          // En una implementación real con delay, se publicaría a un exchange de delay
-          // channel.publish('delayed_retry_exchange', msg.fields.routingKey, msg.content, {headers});
-          // Para este ejercicio, vamos a simplificar:
-          // Simplemente re-publicamos a la misma cola, asumiendo que se procesará de nuevo.
-          // Esto no tiene delay.
-          // La lógica de abajo es más realista para enviar a DLX después de N fallos directos.
-
-          // Corrección para el ejercicio de reintentos directos antes de DLX:
-          // Aquí la idea es que el propio consumidor decide no reintentar más y lo manda a DLX
-          // No vamos a republicar. El consumidor actual decide.
-          // Entonces, si la condición de fallo se mantiene:
-          headers = msg.properties.headers || {}; // Recargar por si acaso
-          attempt = (headers["x-attempt-consumer"] || 0) + 1; // Usar un header diferente para no confundir
-
-          if (attempt < MAX_RETRIES) {
-            console.log(
-              `Consumer: Failed attempt ${attempt}. NACKing to re-queue (simulated).`
-            );
-            msg.properties.headers["x-attempt-consumer"] = attempt;
-            // Para que se reintente, necesitamos un mecanismo. O la cola lo devuelve
-            // o lo republicamos. Si la cola está configurada sin DLX y hacemos nack(requeue=true)
-            // volvería. Si tiene DLX, nack(requeue=true) puede tener comportamientos complejos.
-            // Para el flujo del ejercicio: el consumidor *decide* que es un fallo y lo nackea
-            // y la cola lo manda a DLX si es nack(requeue=false)
-            // Entonces, si queremos simular varios intentos ANTES de DLX, el consumidor DEBE
-            // controlar esto.
-            // La forma más simple es:
-            // NACK (requeue=true) para los primeros N-1 intentos (SIN DLX EN ESTA COLA INICIAL)
-            // y luego transferir a una cola que SÍ TENGA DLX para el último intento.
-            // O, si la cola SIEMPRE tiene DLX:
-            // El consumidor procesa, si falla y no es el último intento, debe de alguna forma
-            // hacer que el mensaje vuelva *sin* pasar por DLX, lo cual es complejo.
-            // La opción del prompt original de republicar con 'x-delay' es la más robusta.
-            // Dado que no tenemos plugin de delay:
-            // El consumidor tratará N veces. Si falla N veces, lo mandará a DLQ.
-            // Esto significa que el mensaje es consumido N veces.
-            channel.nack(msg, false, true); // Reencolar para reintento inmediato (demo)
-          } else {
-            console.log(
-              `Consumer: Max retries (${MAX_RETRIES}) reached. Sending to DLX.`
-            );
-            channel.nack(msg, false, false); // Enviar a DLX
-          }
-        } else {
-          // Error permanente o error después de MAX_RETRIES intentos
-          console.log(
-            `Consumer: Non-retryable error or max retries exceeded. Sending to DLX.`
-          );
-          channel.nack(msg, false, false); // Enviar a DLX
-        }
+      } else {
+        channel.nack(msg, false, false); // DLX (si la cola está configurada)
       }
     }
   },
@@ -328,6 +348,18 @@ graph TD
 
     T --> PH["Handler de Eventos"]
     P --> PH
+```
+
+**Aplicado al proyecto del curso: versionado de Integration Events**
+
+En nuestro proyecto, los eventos entre bounded contexts (por ejemplo `ReserveStockRequested`, `StockReserved`, `StockReservationRejected`) deberían incluir como mínimo: `type`, `version`, `timestamp`, `correlationId` y `payload` (ver `project/artifacts/03-integration-contracts.md`).
+
+Idea de pipeline en un consumidor:
+
+```ts
+const raw = JSON.parse(msg.content.toString());
+const event = upcast(raw); // v1 -> v2 si hace falta
+await handler.handle(event); // aquí entra tu Use Case (mismo “núcleo” que en días anteriores)
 ```
 
 ### 2.3 Parallel Topic / Parallel Stream (Tópico Paralelo):
@@ -403,8 +435,9 @@ Crear un consumidor que pueda procesar dos versiones de un evento `TaskAssigned`
 2. Creen una función up-caster `upcastTaskAssigned(event: any): TaskAssignedV2` que transforme un V1 a V2 (asumiendo una `priority: 'low'` por defecto para V1).
 3. En `ejercicios/ej3-upcaster/consumer_upcast.ts`, creen un consumidor.
 4. Dentro del consumidor, parseen el mensaje, apliquen el up-caster, y luego procesen el evento V2 (ej. impriman sus campos).
-5. Usen el productor para enviar instancias de `TaskAssignedV1` y `TaskAssignedV2` (como JSON strings).
-6. Verifiquen que el consumidor procesa ambas versiones correctamente, mostrando la prioridad (ya sea la por defecto o la especificada).
+5. Ejecuten el consumidor: `npm run upcast-consumer`.
+6. Usen el productor para enviar instancias de `TaskAssignedV1` y `TaskAssignedV2` (como JSON strings): `npm run upcast-producer`.
+7. Verifiquen que el consumidor procesa ambas versiones correctamente, mostrando la prioridad (ya sea la por defecto o la especificada).
 
 **Snippet de ayuda (up-caster):**
 
@@ -469,38 +502,35 @@ export function upcastTaskAssigned(eventData: any): TaskAssignedV2 {
 
 ```typescript
 // Snippet: Configuración básica de OpenTelemetry SDK (conceptual)
-// En un archivo otel-setup.ts o similar
-import { NodeSDK } from '@opentelemetry/sdk-node';
-import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http'; // o grpc
-import { AmqplibInstrumentation } from '@opentelemetry/instrumentation-amqplib';
-import { HttpInstrumentation } from '@opentelemetry/instrumentation-http'; // Útil si los servicios hacen llamadas HTTP
-import { ExpressInstrumentation } // si usan Express
+// En un archivo `otel.ts` (ej.: project/*/src/infra/observability/otel.ts)
+import { NodeSDK } from "@opentelemetry/sdk-node";
+import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
+import { AmqplibInstrumentation } from "@opentelemetry/instrumentation-amqplib";
+import { HttpInstrumentation } from "@opentelemetry/instrumentation-http";
+import { Resource } from "@opentelemetry/resources";
+import { SemanticResourceAttributes } from "@opentelemetry/semantic-conventions";
 
-// Configura el exportador (ej. a un colector OTel corriendo localmente en Docker)
-const traceExporter = new OTLPTraceExporter({
-  url: 'http://localhost:4318/v1/traces', // Puerto estándar para OTLP HTTP
-});
+export async function startOtel(serviceName: string) {
+  const traceExporter = new OTLPTraceExporter({
+    url:
+      process.env.OTEL_EXPORTER_OTLP_ENDPOINT ??
+      "http://localhost:4318/v1/traces",
+  });
 
-const sdk = new NodeSDK({
-  traceExporter,
-  instrumentations: [
-    new AmqplibInstrumentation(), // Para RabbitMQ
-    new HttpInstrumentation(),    // Para llamadas HTTP salientes/entrantes
-    // otras instrumentaciones...
-  ],
-  // serviceName: 'my-event-processor-service' // ¡Importante para identificar el servicio!
-});
+  const sdk = new NodeSDK({
+    resource: new Resource({
+      [SemanticResourceAttributes.SERVICE_NAME]: serviceName,
+    }),
+    traceExporter,
+    instrumentations: [new AmqplibInstrumentation(), new HttpInstrumentation()],
+  });
 
-// sdk.start(); // Iniciar el SDK al arrancar la aplicación
-// console.log('OpenTelemetry SDK started.');
-
-// // Para apagarlo correctamente:
-// // process.on('SIGTERM', () => {
-// //   sdk.shutdown().then(() => console.log('Tracing terminated')).catch(err => console.error('Error shutting down tracing', err));
-// // });
+  await sdk.start();
+  return sdk;
+}
 ```
 
-Para este módulo, podemos añadir un colector OpenTelemetry a nuestro `docker-compose.yml`."
+Para este módulo, podemos añadir un colector OpenTelemetry a `curso/dia-09/ejercicios/docker-compose.yml` (o a tu compose del proyecto si lo tienes).
 
 **Docker Compose (añadir OTel Collector):**
 
@@ -577,8 +607,8 @@ service:
   - **Objetivo:** (Si el tiempo y la configuración lo permiten) Ver una traza simple de un mensaje RabbitMQ.
   - **Pasos:**
     1.  "Asegúrense de que el `otel-collector` esté configurado en Docker Compose y corriendo."
-    2.  "En el proyecto, creen un archivo `otel-setup.ts` con la configuración del SDK (como el snippet anterior). Asegúrense de llamar a `sdk.start()` al inicio de su productor y consumidor."
-    3.  "Añadan un `service.name` en la configuración del SDK para identificar sus servicios."
+    2.  "En el proyecto, creen un archivo `otel.ts` con la configuración del SDK (como el snippet anterior). Asegúrense de llamar a `startOtel('inventory-service')` / `startOtel('order-fulfillment-service')` al inicio de `main.ts` (antes de importar/instanciar el resto)."
+    3.  "Identifiquen el servicio (service name) de forma consistente: por parámetro (`startOtel(...)`) o con `OTEL_SERVICE_NAME`."
     4.  "Ejecuten el productor para enviar un mensaje, y luego el consumidor para procesarlo."
     5.  "Observen los logs del `otel-collector`. Deberían ver la telemetría (trazas) siendo exportada (al `logging` exporter)."
     6.  (Avanzado si hay tiempo y un backend como Jaeger) "Si tienen Jaeger configurado, busquen la traza allí."
@@ -605,7 +635,7 @@ service:
 **Conclusión y Próximos Pasos**
 
 - **Narrativa del Instructor:**
-  - "¡Felicidades por completar este segundo día intensivo\! Hoy hemos hecho nuestros sistemas EDA mucho más robustos y hemos sentado las bases para entender lo que sucede en ellos."
+  - "¡Buen trabajo\! Hoy hemos hecho nuestros sistemas EDA mucho más robustos y hemos sentado las bases para entender lo que sucede en ellos."
   - "Hemos aprendido a manejar errores con DLX, a implementar reintentos inteligentes, a evolucionar nuestros eventos con up-casters, y hemos tenido un primer vistazo a la crucial tarea de la observabilidad y trazabilidad con OpenTelemetry."
   - "Recuerden que la práctica constante es clave. Los animo a seguir experimentando con los ejercicios, a explorar más a fondo OpenTelemetry y a pensar cómo aplicar estos conceptos en sus propios proyectos."
 - **Recursos Adicionales:**
@@ -613,4 +643,4 @@ service:
   - Plugins de RabbitMQ como `rabbitmq_delayed_message_exchange`.
 - **Q\&A Abierto.**
 
-Este plan para el Día 2 intenta ser práctico, centrado en RabbitMQ con Node.js, y proporcionar una progresión lógica desde el manejo de errores hasta la observabilidad. ¡Espero que sea una excelente continuación para tu taller\!
+Este plan para la **Sesión 9** intenta ser práctico, centrado en RabbitMQ con Node.js, y proporcionar una progresión lógica desde el manejo de errores hasta la observabilidad.

@@ -1,0 +1,39 @@
+syntax = "proto3";
+
+package course.inventory.v1;
+
+import "common.proto";
+
+service InventoryService {
+  rpc GetStock(GetStockRequest) returns (GetStockResponse);
+  rpc ReserveStock(ReserveStockRequest) returns (course.common.v1.Empty);
+  rpc ReleaseReservation(ReleaseReservationRequest) returns (course.common.v1.Empty);
+  rpc ReplenishStock(ReplenishStockRequest) returns (course.common.v1.Empty);
+}
+
+message GetStockRequest {
+  string sku = 1;
+}
+
+message GetStockResponse {
+  string sku = 1;
+  int32 available = 2;
+  string updatedAt = 3;
+}
+
+message ReserveStockRequest {
+  string sku = 1;
+  string reservationId = 2;
+  int32 qty = 3;
+}
+
+message ReleaseReservationRequest {
+  string sku = 1;
+  string reservationId = 2;
+}
+
+message ReplenishStockRequest {
+  string sku = 1;
+  int32 qty = 2;
+}
+

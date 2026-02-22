@@ -1,13 +1,10 @@
 services:
   rabbitmq:
-    image: rabbitmq:4.1-management # Usamos una versión con interfaz de gestión
-    container_name: eda_rabbitmq_dia2
+    image: rabbitmq:3-management-alpine # Interfaz de gestión (alineado con día 8)
+    container_name: eda_rabbitmq_dia09
     ports:
       - "5672:5672" # Puerto AMQP para la aplicación
       - "15672:15672" # Puerto para la interfaz de gestión web
-    environment:
-      - RABBITMQ_DEFAULT_USER=user
-      - RABBITMQ_DEFAULT_PASS=password
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq/
 volumes:

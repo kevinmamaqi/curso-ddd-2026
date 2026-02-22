@@ -1,0 +1,54 @@
+syntax = "proto3";
+
+package course.fulfillment.v1;
+
+import "common.proto";
+
+service FulfillmentService {
+  rpc PlaceOrder(PlaceOrderRequest) returns (course.common.v1.Empty);
+  rpc GetOrder(GetOrderRequest) returns (GetOrderResponse);
+  rpc CancelOrder(CancelOrderRequest) returns (course.common.v1.Empty);
+  rpc GetPickList(GetPickListRequest) returns (GetPickListResponse);
+}
+
+message PlaceOrderLine {
+  string lineId = 1;
+  string sku = 2;
+  int32 qty = 3;
+}
+
+message PlaceOrderRequest {
+  string orderId = 1;
+  string reservationId = 2;
+  repeated PlaceOrderLine lines = 3;
+}
+
+message GetOrderRequest {
+  string orderId = 1;
+}
+
+message GetOrderResponse {
+  string orderId = 1;
+  string status = 2;
+  string reservationId = 3;
+}
+
+message CancelOrderRequest {
+  string orderId = 1;
+}
+
+message GetPickListRequest {
+  string orderId = 1;
+}
+
+message PickListItem {
+  string lineId = 1;
+  string sku = 2;
+  int32 qty = 3;
+}
+
+message GetPickListResponse {
+  string orderId = 1;
+  repeated PickListItem items = 2;
+}
+

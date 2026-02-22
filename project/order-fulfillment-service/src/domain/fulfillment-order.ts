@@ -19,7 +19,9 @@ export type FulfillmentOrderStatus =
   | "PARTIALLY_RESERVED"
   | "RESERVED"
   | "REJECTED"
-  | "READY_TO_SHIP";
+  | "READY_TO_SHIP"
+  | "CANCELLED"
+  | "SHIPPED";
 
 export class FulfillmentOrder extends AggregateRoot {
   private status: FulfillmentOrderStatus = "DRAFT";
@@ -139,6 +141,8 @@ export class FulfillmentOrder extends AggregateRoot {
   }
 
   confirmLineReservation(params: { lineId: LineId; sku: Sku; qty: Quantity }): void {
+    if (this.status === "CANCELLED" || this.status === "SHIPPED") return;
+
     const line = this.lines.get(params.lineId.toString());
     if (!line) throw new Error("Line not found.");
 
@@ -163,6 +167,8 @@ export class FulfillmentOrder extends AggregateRoot {
   }
 
   rejectLineReservation(params: { lineId: LineId; sku: Sku; reason: string }): void {
+    if (this.status === "CANCELLED" || this.status === "SHIPPED") return;
+
     const line = this.lines.get(params.lineId.toString());
     if (!line) throw new Error("Line not found.");
 
@@ -199,12 +205,50 @@ export class FulfillmentOrder extends AggregateRoot {
     });
   }
 
+  cancel(): void {
+    if (this.status === "CANCELLED") return;
+    if (this.status === "SHIPPED") {
+      throw new Error("Cannot cancel a shipped order.");
+    }
+
+    this.status = "CANCELLED";
+    this.record({
+      type: "OrderCancelled",
+      occurredAt: nowIso(),
+      payload: { orderId: this.id.toString(), reservationId: this.reservationId }
+    });
+  }
+
+  getPickList(): Array<{ lineId: string; sku: string; qty: number }> {
+    return Array.from(this.lines.values()).map((l) => ({
+      lineId: l.lineId.toString(),
+      sku: l.sku.toString(),
+      qty: l.qty.toNumber()
+    }));
+  }
+
   getStatus(): FulfillmentOrderStatus {
     return this.status;
   }
 
   getReservationId(): string | undefined {
     return this.reservationId;
+  }
+
+  getLinesSnapshot(): Array<{
+    lineId: string;
+    sku: string;
+    qty: number;
+    reservationStatus: LineReservationStatus;
+    rejectionReason?: string;
+  }> {
+    return Array.from(this.lines.values()).map((l) => ({
+      lineId: l.lineId.toString(),
+      sku: l.sku.toString(),
+      qty: l.qty.toNumber(),
+      reservationStatus: l.reservationStatus,
+      rejectionReason: l.rejectionReason
+    }));
   }
 
   private recomputeStatus(): void {

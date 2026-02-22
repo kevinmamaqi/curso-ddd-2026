@@ -23,6 +23,14 @@ export class InventoryViewProjector {
           })
           break
         }
+        case "ReservationReleased": {
+          await this.inventoryViewRepo.upsert({
+            sku: event.payload.sku,
+            available: event.payload.available,
+            updatedAt: event.occurredAt,
+          })
+          break
+        }
         default: {
           const _exhaustiveCheck: never = event
           throw new Error(`Unsupported inventory event: ${String(_exhaustiveCheck)}`)

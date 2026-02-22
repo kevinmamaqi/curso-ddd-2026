@@ -2,6 +2,88 @@
 
 > Este material se usa en el cierre del curso como parte del bloque de estandarización, conclusiones y revisión de proyectos.
 
+---
+
+## Aplicado al proyecto del curso (recomendación práctica)
+
+En `project/` ya tenemos documentación base en `project/artifacts/` (context map, contratos, reflexión). En esta sesión, la idea es **convertirlo en docs-as-code** mínimo viable:
+
+- Mantener los artefactos que ya existen:
+  - `project/artifacts/02-context-map.mmd`
+  - `project/artifacts/03-integration-contracts.md`
+- Añadir 1 diagrama C4 “contenedores” como fuente de verdad (opcional con Structurizr DSL):
+  - `project/artifacts/05-c4.dsl` (nuevo)
+
+### Diagrama (C4 Contenedores, en mermaid)
+
+```mermaid
+flowchart LR
+  Client["Cliente"] -->|HTTP| F["order-fulfillment-service (Fastify)"]
+  Client -->|HTTP| I["inventory-service (Fastify)"]
+
+  F -->|SQL| PG1[(Postgres)]
+  I -->|SQL| PG2[(Postgres)]
+
+  F -->|publish/consume| MQ["RabbitMQ (course.events.v1)"]
+  I -->|publish/consume| MQ
+
+  subgraph Obs["Observabilidad (día 10)"]
+    G["Grafana"]
+    P["Prometheus"]
+    L["Loki"]
+    T["Tempo"]
+  end
+
+  F -. OTLP/metrics/logs .-> T
+  I -. OTLP/metrics/logs .-> T
+  F -. scrape /metrics .-> P
+  I -. scrape /metrics .-> P
+  L --> G
+  P --> G
+  T --> G
+```
+
+### Structurizr DSL (snippet mínimo)
+
+Ejemplo (para guardar en `project/artifacts/05-c4.dsl`):
+
+```dsl
+workspace "Curso DDD Hex Node" "C4 del proyecto del curso" {
+  model {
+    student = person "Cliente/Estudiante" "Usa las APIs HTTP"
+    system = softwareSystem "Course Project" "Order Fulfillment + Inventory" {
+      fulfillment = container "order-fulfillment-service" "API + workers (Outbox/Inbox)" "Node.js + Fastify"
+      inventory = container "inventory-service" "API + workers (Outbox/Inbox)" "Node.js + Fastify"
+    }
+
+    rabbit = softwareSystem "RabbitMQ" "Broker (course.events.v1)" { tags "broker" }
+    postgres = softwareSystem "Postgres" "Base de datos" { tags "database" }
+    grafana = softwareSystem "Grafana Stack" "Grafana + Prometheus + Loki + Tempo" { tags "observability" }
+
+    student -> system.fulfillment "HTTP"
+    student -> system.inventory "HTTP"
+    system.fulfillment -> postgres "SQL"
+    system.inventory -> postgres "SQL"
+    system.fulfillment -> rabbit "AMQP publish/consume"
+    system.inventory -> rabbit "AMQP publish/consume"
+    system.fulfillment -> grafana "OTLP/metrics/logs"
+    system.inventory -> grafana "OTLP/metrics/logs"
+  }
+
+  views {
+    systemContext system "context" { include * autolayout lr }
+    container system "containers" { include * autolayout lr }
+    styles {
+      element "broker" { shape Cylinder background "#DDEEFF" }
+      element "database" { shape Cylinder background "#EEE" }
+      element "observability" { background "#FFF4DD" }
+    }
+  }
+}
+```
+
+Opcional (si quieres renderizarlo): usa Structurizr CLI desde local/CI. La clave del curso no es la herramienta, es que el diagrama sea **versionado** y revisable junto al código.
+
 ## Módulo 15 — Estandarización de desarrollos, conclusiones y revisión de proyectos
 
 ### 15.1 Introducción al concepto de estandarización de desarrollos

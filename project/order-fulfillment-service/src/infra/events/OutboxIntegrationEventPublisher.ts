@@ -10,13 +10,21 @@ export class OutboxIntegrationEventPublisher implements IntegrationEventPublishe
   ) {}
 
   async publish(event: IntegrationEvent<string, unknown>): Promise<void> {
-    if (event.type !== "ReserveStockRequested") {
+    if (event.type !== "ReserveStockRequested" && event.type !== "ReleaseReservationRequested") {
       throw new Error(`Unsupported integration event type: ${event.type}`);
     }
 
     const reservationId = (event.payload as any)?.reservationId;
-    const messageId = `${String(reservationId)}:ReserveStockRequested:v${event.version}`;
-    const destination = new URL("/integration/reserve-stock-requested", this.config.inventoryBaseUrl).toString();
+    const { messageId, destination } =
+      event.type === "ReserveStockRequested"
+        ? {
+            messageId: `${String(reservationId)}:ReserveStockRequested:v${event.version}`,
+            destination: "fulfillment.reserve-stock-requested.v1"
+          }
+        : {
+            messageId: `${String(reservationId)}:ReleaseReservationRequested:v${event.version}`,
+            destination: "fulfillment.release-reservation-requested.v1"
+          };
 
     const msg: IntegrationMessage<typeof event> = {
       messageId,
@@ -27,4 +35,3 @@ export class OutboxIntegrationEventPublisher implements IntegrationEventPublishe
     await this.outboxRepo.enqueue({ id: messageId, destination, body: msg });
   }
 }
-

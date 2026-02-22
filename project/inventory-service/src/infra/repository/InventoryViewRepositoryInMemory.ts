@@ -1,4 +1,8 @@
-import { InventoryView, InventoryViewRepositoryPort } from "../../application/ports/InventoryViewRepositoryPort"
+import {
+  InventoryView,
+  InventoryViewListFilters,
+  InventoryViewRepositoryPort,
+} from "../../application/ports/InventoryViewRepositoryPort"
 
 export class InventoryViewRepositoryInMemory implements InventoryViewRepositoryPort {
   private readonly views = new Map<string, InventoryView>()
@@ -12,5 +16,15 @@ export class InventoryViewRepositoryInMemory implements InventoryViewRepositoryP
   async findBySku(sku: string): Promise<InventoryView | null> {
     return this.views.get(sku) ?? null
   }
-}
 
+  async list(filters: InventoryViewListFilters): Promise<InventoryView[]> {
+    let out = Array.from(this.views.values())
+    if (filters.sku) {
+      out = out.filter((v) => v.sku === filters.sku)
+    }
+    if (filters.onlyAvailable) {
+      out = out.filter((v) => v.available > 0)
+    }
+    return out
+  }
+}

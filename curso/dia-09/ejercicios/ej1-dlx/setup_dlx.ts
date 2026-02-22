@@ -2,7 +2,7 @@ import amqplib from "amqplib";
 
 (async () => {
   // 1. Setear la conexión
-  const conn = await amqplib.connect("amqp://user:password@localhost:5672");
+  const conn = await amqplib.connect("amqp://localhost:5672");
   const channel = await conn.createChannel();
 
   // 2. Setear los exchanges

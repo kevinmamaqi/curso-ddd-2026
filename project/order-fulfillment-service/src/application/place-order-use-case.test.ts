@@ -60,6 +60,11 @@ class InMemoryOrderStatusViewRepo implements OrderStatusViewRepositoryPort {
   async getById(orderId: string): Promise<OrderStatusView | null> {
     return this.items.get(orderId) ?? null;
   }
+
+  async listByStatus(status?: string): Promise<OrderStatusView[]> {
+    const values = Array.from(this.items.values());
+    return status ? values.filter((v) => v.status === status) : values;
+  }
 }
 
 class FakeUow implements UnitOfWorkPort {

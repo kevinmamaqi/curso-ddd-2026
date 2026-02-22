@@ -26,6 +26,14 @@ export type FulfillmentDomainEvents =
   | DomainEvent<
       "FulfillmentOrderReadyToShip",
       { orderId: string }
+    >
+  | DomainEvent<
+      "OrderCancelled",
+      { orderId: string; reservationId?: string }
+    >
+  | DomainEvent<
+      "PickListGenerated",
+      { orderId: string; lineCount: number }
     >;
 
 export type IntegrationEvent<TType extends string, TPayload> = Readonly<{
@@ -50,6 +58,11 @@ export type InventoryIntegrationEvents =
       "StockReservationRejected",
       { reservationId: string; sku: string; reason: string }
     >;
+
+export type ReleaseReservationRequestedEvent = IntegrationEvent<
+  "ReleaseReservationRequested",
+  { reservationId: string; lines: Array<{ sku: string; qty: number }> }
+>;
 
 export function nowIso(): IsoDateString {
   return new Date().toISOString();

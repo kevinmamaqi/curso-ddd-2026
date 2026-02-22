@@ -44,10 +44,11 @@ export class InventoryIntegrationEventsPublisher implements InventoryIntegration
           };
 
     const messageId = `${params.reservationId}:${params.sku}:${event.type}:v${event.version}`;
-    const destination = new URL(
-      "/integration/inventory-events",
-      this.config.orderServiceBaseUrl
-    ).toString();
+    // EDA: destination == RabbitMQ routing key
+    const destination =
+      event.type === "StockReserved"
+        ? "inventory.stock-reserved.v1"
+        : "inventory.stock-rejected.v1";
 
     const msg: IntegrationMessage<typeof event> = {
       messageId,

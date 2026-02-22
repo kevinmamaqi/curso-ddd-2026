@@ -53,6 +53,10 @@ export class Book {
         });
     }
 
+    hydrateReservation(reservationId: ReservationId, qty: number) {
+        this.reservations.set(reservationId, qty);
+    }
+
     getAvailableCopies(): number {
         return this.stock;
     }
@@ -70,7 +74,23 @@ export class Book {
     }
     
     releaseReservation(reservationId: ReservationId) {
+        const qty = this.reservations.get(reservationId);
+        if (!qty) {
+            throw new InvalidReservationIdError(`The reservationId ${reservationId.toString()} does not exist`);
+        }
         this.reservations.delete(reservationId);
+        this.stock = this.stock + qty;
+
+        this.pendingDomainEvents.push({
+            type: "ReservationReleased",
+            occurredAt: new Date(),
+            payload: {
+                sku: this.id.toValue(),
+                reservationId: reservationId.toValue(),
+                quantity: qty,
+                available: this.stock,
+            },
+        });
     }
 
     pullDomainEvents(): InventoryDomainEvent[] {

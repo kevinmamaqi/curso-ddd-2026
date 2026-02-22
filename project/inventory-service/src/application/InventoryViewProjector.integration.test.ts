@@ -8,6 +8,8 @@ import { BookId } from "../domain/va/BookId"
 import { ReserveBookUseCase } from "./ReserveBookUseCase"
 import { InventoryViewProjector } from "./InventoryViewProjector"
 import { BookEventsPublisherPort } from "./ports/BookEventsPublisherPort"
+import { ReservationRepositoryPostgres } from "../infra/repository/ReservationRepositoryPostgres"
+import { UnitOfWorkPostgres } from "../infra/repository/UnitOfWorkPostgres"
 
 class BookEventsPublisherMock implements BookEventsPublisherPort {
   async publish(): Promise<void> {}
@@ -38,6 +40,9 @@ describeIntegration("InventoryViewProjector (integration)", () => {
     const bookRepo = new BookRepositoryPostgres(dbClient)
     await bookRepo.initSchema()
 
+    const reservationRepo = new ReservationRepositoryPostgres(dbClient)
+    await reservationRepo.initSchema()
+
     const viewRepo = new InventoryViewRepositoryPostgres(dbClient)
     await viewRepo.initSchema()
 
@@ -55,7 +60,9 @@ describeIntegration("InventoryViewProjector (integration)", () => {
     const projector = new InventoryViewProjector(viewRepo)
     const events = new BookEventsPublisherMock()
 
-    const uc = new ReserveBookUseCase(bookRepo, events, projector)
+    const reservationRepo = new ReservationRepositoryPostgres(dbClient)
+    const uow = new UnitOfWorkPostgres(dbClient)
+    const uc = new ReserveBookUseCase(bookRepo, reservationRepo, events, projector, uow)
     await uc.execute({
       bookId: uuid,
       quantity: 1,

@@ -1,4 +1,8 @@
-import { InventoryView, InventoryViewRepositoryPort } from "../../application/ports/InventoryViewRepositoryPort"
+import {
+  InventoryView,
+  InventoryViewListFilters,
+  InventoryViewRepositoryPort,
+} from "../../application/ports/InventoryViewRepositoryPort"
 import { DBClient } from "./pg"
 
 export class InventoryViewRepositoryPostgres implements InventoryViewRepositoryPort {
@@ -41,5 +45,32 @@ export class InventoryViewRepositoryPostgres implements InventoryViewRepositoryP
       updatedAt: new Date(row.updated_at),
     }
   }
-}
 
+  async list(filters: InventoryViewListFilters): Promise<InventoryView[]> {
+    const where: string[] = []
+    const params: any[] = []
+
+    if (filters.sku) {
+      params.push(filters.sku)
+      where.push(`sku = $${params.length}`)
+    }
+    if (filters.onlyAvailable) {
+      where.push(`available > 0`)
+    }
+
+    const sql = `
+      SELECT sku, available, updated_at
+      FROM inventory_view
+      ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
+      ORDER BY updated_at DESC
+      LIMIT 200
+    `
+
+    const res = await this.dbClient.query(sql, params)
+    return res.rows.map((row: any) => ({
+      sku: String(row.sku),
+      available: Number(row.available),
+      updatedAt: new Date(row.updated_at),
+    }))
+  }
+}

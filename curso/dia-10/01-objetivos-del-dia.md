@@ -50,3 +50,42 @@
 | 17:20–17:50 | OpenTelemetry | Instrumentación mínima y propagación de contexto. |
 | 17:50–18:20 | Estandarización | C4, ADRs, convenciones y Definition of Done. |
 | 18:20–19:00 | Cierre del proyecto | Checklist final, revisión y siguientes pasos. |
+
+---
+
+## Aplicado al proyecto del curso (lo que cerramos hoy)
+
+La sesión 9 nos dejó el sistema **resiliente**. Hoy lo dejamos **operable** y **comunicable**:
+
+### Wiring 1 — Telemetría mínima por servicio (trazas + métricas)
+
+Objetivo: poder ver en Grafana/Tempo “qué pasó” con un flujo completo:
+
+`POST /orders` → `ReserveStockRequested` → reserva en Inventory → `StockReserved/Rejected` → actualización de estado del pedido.
+
+Archivos típicos a tocar/crear en `project/`:
+
+- `project/order-fulfillment-service/src/infra/observability/otel.ts` (nuevo: SDK + exporters + instrumentations)
+- `project/order-fulfillment-service/main.ts` (inicializar OTel lo primero)
+- `project/inventory-service/src/infra/observability/otel.ts` (nuevo)
+- `project/inventory-service/main.ts` (inicializar OTel lo primero)
+
+Opcional (si instrumentas RabbitMQ con más detalle):
+
+- `project/order-fulfillment-service/src/infra/messaging/rabbitmq.ts` (añadir spans/attrs al publish/consume)
+- `project/inventory-service/src/infra/messaging/rabbitmq.ts`
+
+### Wiring 2 — “Definition of Done” (dashboards + arquitectura)
+
+Objetivo: tener una checklist de cierre con:
+
+- métricas de negocio (`orders_created_total`, `reservations_succeeded_total`, `reservations_failed_total`)
+- métricas de operación (errores/retries/DLQ)
+- 1 diagrama C4 contenedores + 1 ADR relevante (ej.: RabbitMQ + Outbox/Inbox)
+
+Archivos típicos a tocar/crear:
+
+- `project/artifacts/02-context-map.mmd` (actualizar si el mapa no refleja EDA)
+- `project/artifacts/03-integration-contracts.md` (confirmar `type/version/correlationId`)
+- `project/artifacts/05-c4.dsl` (nuevo, si quieres Structurizr DSL en el repo)
+- `project/artifacts/06-adr-001-eda-transport.md` (nuevo, decisión: broker + outbox/inbox + DLQ)

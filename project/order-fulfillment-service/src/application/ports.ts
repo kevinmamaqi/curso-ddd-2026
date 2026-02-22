@@ -40,4 +40,5 @@ export type OrderStatusView = Readonly<{
 export interface OrderStatusViewRepositoryPort {
   upsert(view: OrderStatusView): Promise<void>;
   getById(orderId: string): Promise<OrderStatusView | null>;
+  listByStatus(status?: string): Promise<OrderStatusView[]>;
 }

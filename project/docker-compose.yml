@@ -1,0 +1,160 @@
+services:
+  postgres:
+    image: postgres:17.1-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=postgres
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./observability/postgres-init:/docker-entrypoint-initdb.d:ro
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+      - "15692:15692" # prometheus metrics
+    environment:
+      - RABBITMQ_DEFAULT_USER=guest
+      - RABBITMQ_DEFAULT_PASS=guest
+    command: >
+      sh -c "rabbitmq-plugins enable --offline rabbitmq_prometheus && rabbitmq-server"
+
+  loki:
+    image: grafana/loki:2.9.0
+    command: -config.file=/etc/loki/config.yml
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./observability/loki-config.yml:/etc/loki/config.yml:ro
+
+  promtail:
+    image: grafana/promtail:2.9.0
+    command: -config.file=/etc/promtail/config.yml
+    volumes:
+      - ./logs:/logs
+      - ./observability/promtail-config.yml:/etc/promtail/config.yml:ro
+
+  tempo:
+    image: grafana/tempo:2.7.2
+    command: ["-config.file=/etc/tempo.yaml"]
+    ports:
+      - "3200:3200"
+      - "4317:4317"
+      - "4318:4318"
+    volumes:
+      - ./observability/tempo-config.yml:/etc/tempo.yaml:ro
+
+  prometheus:
+    image: prom/prometheus:v2.47.0
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+
+  grafana:
+    image: grafana/grafana:12.0.0
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - prometheus
+      - loki
+      - tempo
+
+  inventory-service:
+    build:
+      context: .
+      dockerfile: inventory-service/Dockerfile
+    ports:
+      - "3000:3000"
+      - "9464:9464"
+      - "50051:50051"
+    environment:
+      - PORT=3000
+      - GRPC_PORT=50051
+      - HOST=0.0.0.0
+      - DATABASE_HOST=postgres
+      - DATABASE_PORT=5432
+      - DATABASE_USER=postgres
+      - DATABASE_PASSWORD=postgres
+      - DATABASE_NAME=inventory
+      - LOG_FILE=/logs/inventory-service.log
+      - ORDER_SERVICE_BASE_URL=http://order-fulfillment-service:3002
+      - RABBITMQ_URL=amqp://rabbitmq:5672
+      - RABBITMQ_EXCHANGE=course.events.v1
+      - RABBITMQ_DLX=course.dlx.v1
+      - RABBITMQ_MAX_RETRIES=3
+      - METRICS_PORT=9464
+      - OTEL_SERVICE_NAME=inventory-service
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://tempo:4318
+    volumes:
+      - ./logs:/logs
+    depends_on:
+      - postgres
+      - rabbitmq
+      - tempo
+
+  order-fulfillment-service:
+    build:
+      context: .
+      dockerfile: order-fulfillment-service/Dockerfile
+    ports:
+      - "3002:3002"
+      - "9465:9465"
+      - "50052:50052"
+    environment:
+      - PORT=3002
+      - GRPC_PORT=50052
+      - HOST=0.0.0.0
+      - DATABASE_HOST=postgres
+      - DATABASE_PORT=5432
+      - DATABASE_USER=postgres
+      - DATABASE_PASSWORD=postgres
+      - DATABASE_NAME=fulfillment
+      - LOG_FILE=/logs/order-fulfillment-service.log
+      - INVENTORY_BASE_URL=http://inventory-service:3000
+      - RABBITMQ_URL=amqp://rabbitmq:5672
+      - RABBITMQ_EXCHANGE=course.events.v1
+      - RABBITMQ_DLX=course.dlx.v1
+      - RABBITMQ_MAX_RETRIES=3
+      - METRICS_PORT=9465
+      - OTEL_SERVICE_NAME=order-fulfillment-service
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://tempo:4318
+    volumes:
+      - ./logs:/logs
+    depends_on:
+      - postgres
+      - rabbitmq
+      - tempo
+
+  api-gateway:
+    build:
+      context: .
+      dockerfile: api-gateway/Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      - PORT=8080
+      - HOST=0.0.0.0
+      - INVENTORY_BASE_URL=http://inventory-service:3000
+      - FULFILLMENT_BASE_URL=http://order-fulfillment-service:3002
+      - DOWNSTREAM_TRANSPORT=grpc
+      - INVENTORY_GRPC_ADDRESS=inventory-service:50051
+      - FULFILLMENT_GRPC_ADDRESS=order-fulfillment-service:50052
+    depends_on:
+      - inventory-service
+      - order-fulfillment-service
+
+volumes:
+  postgres_data:
+  grafana_data:

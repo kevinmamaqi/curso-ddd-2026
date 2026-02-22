@@ -18,6 +18,11 @@ export type ReserveStockRequestedEvent = IntegrationEvent<
   { reservationId: string; lines: Array<{ sku: string; qty: number }> }
 >;
 
+export type ReleaseReservationRequestedEvent = IntegrationEvent<
+  "ReleaseReservationRequested",
+  { reservationId: string; lines: Array<{ sku: string; qty: number }> }
+>;
+
 export type StockReservedEvent = IntegrationEvent<
   "StockReserved",
   { reservationId: string; sku: string; qty: number }
@@ -33,4 +38,3 @@ export type InventoryResultEvent = StockReservedEvent | StockReservationRejected
 export function nowIso(): IsoDateString {
   return new Date().toISOString();
 }
-
