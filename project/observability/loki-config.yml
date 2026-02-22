@@ -24,6 +24,7 @@ schema_config:
         prefix: index_
         period: 24h
 
-ruler:
-  alertmanager_url: http://localhost:9093
+# ruler disabled: no alertmanager service in docker-compose
+# ruler:
+#   alertmanager_url: http://alertmanager:9093
 

@@ -34,24 +34,44 @@ async function start() {
   const replenishStock = new ReplenishStockViaGatewayUseCase(inventory);
   const releaseReservation = new ReleaseReservationViaGatewayUseCase(inventory);
 
-  const health = new HealthCheckUseCase(
-    async () => {
-      try {
-        const res = await fetch(new URL("/health", config.inventoryBaseUrl));
-        return res.ok;
-      } catch {
-        return false;
-      }
-    },
-    async () => {
-      try {
-        const res = await fetch(new URL("/health", config.fulfillmentBaseUrl));
-        return res.ok;
-      } catch {
-        return false;
-      }
-    }
-  );
+  const health =
+    config.downstreamTransport === "grpc"
+      ? new HealthCheckUseCase(
+          async () => {
+            try {
+              await inventory.getStock("__health__");
+              return true;
+            } catch (err: unknown) {
+              return (err as { code?: number })?.code === 5; // NOT_FOUND = service reachable
+            }
+          },
+          async () => {
+            try {
+              await fulfillment.getOrder("__health__");
+              return true;
+            } catch (err: unknown) {
+              return (err as { code?: number })?.code === 5; // NOT_FOUND = service reachable
+            }
+          }
+        )
+      : new HealthCheckUseCase(
+          async () => {
+            try {
+              const res = await fetch(new URL("/health", config.inventoryBaseUrl));
+              return res.ok;
+            } catch {
+              return false;
+            }
+          },
+          async () => {
+            try {
+              const res = await fetch(new URL("/health", config.fulfillmentBaseUrl));
+              return res.ok;
+            } catch {
+              return false;
+            }
+          }
+        );
 
   app.register(gatewayRoutes, {
     deps: {

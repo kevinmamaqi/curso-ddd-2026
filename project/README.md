@@ -58,7 +58,7 @@ docker compose -f project/docker-compose.yml up -d --build
 UIs:
 
 - RabbitMQ: `http://localhost:15672` (`guest` / `guest`)
-- Grafana: `http://localhost:3000`
+- Grafana: `http://localhost:3001`
 - Prometheus: `http://localhost:9090`
 
 ## Probar el flujo end-to-end (con API Gateway)

@@ -25,7 +25,7 @@ export class InventoryGrpcServer {
   private server?: grpc.Server;
 
   constructor(
-    private readonly config: AppConfig & { grpcPort?: number },
+    private readonly config: AppConfig,
     private readonly getInventoryBySkuQuery: GetInventoryBySkuQuery,
     private readonly reserveBookUseCase: ReserveBookUseCase,
     private readonly replenishStockUseCase: ReplenishStockUseCase,
@@ -34,7 +34,7 @@ export class InventoryGrpcServer {
 
   async start(): Promise<void> {
     if (this.server) return;
-    const grpcPort = Number((this.config as any).grpcPort ?? process.env.GRPC_PORT ?? 50051);
+    const grpcPort = this.config.grpcPort;
 
     const protosDir = resolveProtosDir();
     const packageDef = protoLoader.loadSync(path.join(protosDir, "inventory.proto"), {
