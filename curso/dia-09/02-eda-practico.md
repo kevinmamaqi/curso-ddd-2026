@@ -109,6 +109,71 @@ Qué mirar dentro del mensaje:
 
 > Tip: si quieres que vaya más rápido a DLQ, baja temporalmente `RABBITMQ_MAX_RETRIES` en `project/docker-compose.yml`.
 
+### 1.5 Ejercicio guiado C: fallo transitorio (DB down) + retry que se recupera
+
+Objetivo: ver un caso **transitorio** donde el consumidor falla, **reintenta con delay**, y finalmente **se recupera** sin caer en DLQ.
+
+1) Arranca el proyecto con tráfico automático (para no depender de cURL manual):
+
+```bash
+docker compose -f project/docker-compose.yml up -d --build
+docker compose -f project/docker-compose.yml --profile demo up -d --build
+```
+
+2) Provoca un fallo transitorio **corto** apagando Postgres ~15s (con `RABBITMQ_MAX_RETRIES=3` y TTL=10s tienes ~30s de “ventana” antes de DLQ):
+
+```bash
+docker compose -f project/docker-compose.yml stop postgres
+sleep 15
+docker compose -f project/docker-compose.yml start postgres
+```
+
+3) Qué deberías observar:
+
+- RabbitMQ UI → verás mensajes pasar a colas `*.retry.10s` (suben) y luego volver a las colas principales.
+- Grafana `Service Health (Course)` → `RabbitMQ: Ready Messages` puede subir momentáneamente.
+- Las DLQs deberían quedarse **en 0** si el downtime fue corto.
+
+Si se te van mensajes a DLQ, reduce el tiempo de parada o sube `RABBITMQ_MAX_RETRIES` temporalmente.
+
+### 1.6 Ejercicio guiado D: recuperación de DLQ (replay controlado)
+
+Objetivo: saber **cómo recuperar** un mensaje que terminó en DLQ sin crear un loop infinito.
+
+Regla: **no replays “a ciegas”**. Primero identifica por qué falló (payload, bug determinista, dependencia caída, etc.).
+
+**Paso 1 — Identifica la DLQ y extrae el mensaje**
+
+En `http://localhost:15672`:
+
+1) Queues → abre una DLQ (ej.: `inventory.reserve_stock_requested.dlq`).
+2) “Get message(s)” → copia el payload.
+3) Inspecciona headers (especialmente `x-death`).
+
+**Paso 2 — Decide el replay (y el `messageId`)**
+
+Este proyecto deduplica por **Inbox** usando `messageId` (`tryAccept(messageId)`).
+
+- Si quieres **reprocesar sí o sí** (porque arreglaste el bug/infra), republish con un `messageId` **nuevo**.
+- Si quieres **evitar efectos duplicados** en un replay accidental, mantén el mismo `messageId` (si ya fue procesado, se ignorará).
+
+**Paso 3 — Re-publica al exchange correcto**
+
+RabbitMQ UI → Exchanges → `course.events.v1` → “Publish message”.
+
+Usa la routing key según el “tipo” de DLQ:
+
+- `inventory.reserve_stock_requested.dlq` → `fulfillment.reserve-stock-requested.v1`
+- `inventory.release_reservation_requested.dlq` → `fulfillment.release-reservation-requested.v1`
+- `fulfillment.inventory_results.dlq` → `inventory.stock-reserved.v1` o `inventory.stock-rejected.v1` (según el evento original)
+
+Pega el payload (si era inválido, corrígelo antes del replay) y publica.
+
+**Paso 4 — Verifica**
+
+- Queues: la DLQ baja (si consumes/manual ack) y la cola principal/retry procesa.
+- Logs (Loki): `{service="inventory-service"}` o `{service="order-fulfillment-service"}` para ver el motivo/resultado.
+
 ### 1.5 Idempotencia: por qué existe Inbox en un EDA
 
 En reintentos, redeliveries o replays, el mismo mensaje puede llegar más de una vez. Para evitar “doble efecto”, el proyecto usa **Inbox**:
@@ -147,7 +212,20 @@ Pipeline recomendado en consumidores:
 
 ```ts
 const raw = JSON.parse(msg.content.toString());
-const message = upcastIntegrationMessage(raw);
+
+// Nota: en este repo no hay un `upcastIntegrationMessage(...)` listo.
+// Si quieres practicar el patrón, crea un helper local (o en tu módulo de contracts)
+// que valide y normalice el shape antes de llamar al caso de uso.
+//
+// Ejemplo “mínimo viable”: asumir v1 si falta `version` y pasar el mensaje tal cual.
+const message = {
+  ...raw,
+  event: {
+    ...raw.event,
+    version: raw?.event?.version ?? 1
+  }
+};
+
 await useCase.execute(message);
 ```
 
@@ -187,6 +265,8 @@ En `http://localhost:3001`:
 - Explore → Tempo:
   - filtra por `service.name=api-gateway`, `service.name=inventory-service`, `service.name=order-fulfillment-service`
 
+Nota: en este repo, Promtail está configurado para enviar a Loki **solo** logs de `inventory-service` y `order-fulfillment-service` (archivos en `project/logs/`).
+
 ---
 
 ## Cierre
@@ -196,4 +276,3 @@ Al terminar la sesión deberías poder:
 1) Explicar (y ver) cómo un mensaje pasa por **retry con TTL** y cuándo termina en **DLQ**.  
 2) Justificar por qué **Inbox** es obligatorio para idempotencia en EDA.  
 3) Usar Grafana/Prometheus/RabbitMQ UI para diagnosticar por qué un flujo “se queda pendiente”.  
-

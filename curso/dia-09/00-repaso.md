@@ -8,6 +8,11 @@
 - Event versioning: tolerant reader, up-casters, streams paralelos.
 - Buenas prácticas: evitar service chaining, uso de gateway/BFF y consideraciones básicas de seguridad.
 
+Notas para la sesión práctica (Día 9):
+
+- Practica al menos un **fallo transitorio** (p.ej. Postgres down 10–20s) para ver que el retry con TTL se recupera.
+- Practica **replay controlado** desde DLQ (no re-publicar a ciegas): inspecciona `x-death`, corrige causa raíz y decide si necesitas cambiar `messageId` (Inbox).
+
 ---
 
 ## Punto de partida: el proyecto final (`project/`)
@@ -87,4 +92,3 @@ Puntos de verificación rápidos:
 - **Idempotencia:** deduplicación con Inbox (evitar efectos duplicados en redeliveries).
 - **Troubleshooting:** mirar colas, DLQs, retries y tiempos de procesamiento para explicar “qué pasó”.
 - **Observabilidad:** ver métricas (Prometheus), logs (Loki) y trazas (Tempo) para seguir un flujo end-to-end.
-

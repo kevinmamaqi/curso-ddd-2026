@@ -35,7 +35,7 @@
 |------|--------|-----------|
 | 16:00–16:10 | Arranque | Levantar `project/` + checklist de observabilidad. |
 | 16:10–16:40 | Retries con criterio | Retry con TTL (delay real) + límites + backoff básico. |
-| 16:40–17:10 | DLQ y recuperación | Poison messages, `x-death`, replay controlado. |
+| 16:40–17:10 | DLQ y recuperación | Poison messages, `x-death`, replay controlado (DLQ → exchange). |
 | 17:10–17:20 | Descanso | Pausa breve. |
 | 17:20–17:50 | Troubleshooting | Qué mirar en RabbitMQ/Prometheus/Grafana cuando “no avanza”. |
 | 17:50–18:30 | Observabilidad | Métricas (HTTP + colas), logs con labels, trazas con OTel. |
@@ -85,6 +85,12 @@ Qué mirar en RabbitMQ:
 - Colas principales vs colas de retry (`*.retry.10s`) vs DLQ (`*.dlq`).
 - Headers `x-attempt` (nuestro contador) y `x-death` (historial de dead-lettering).
 
+Ejercicios guiados recomendados:
+
+- Fallo permanente (payload inválido) → retry → DLQ.
+- Fallo transitorio (DB down corto) → retry → recuperación.
+- Recuperación de DLQ (replay controlado) → verificación por logs/métricas.
+
 ### 2) Idempotencia (Inbox)
 
 Objetivo: que un redelivery o un replay no duplique efectos.
@@ -111,4 +117,3 @@ Dónde está:
 - Grafana provisioning + dashboards:
   - `project/observability/grafana/provisioning/`
   - `project/observability/grafana/dashboards/`
-

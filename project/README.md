@@ -23,7 +23,7 @@ flowchart LR
     P["Prometheus :9090"]
     L["Loki :3100"]
     T["Tempo :3200 / OTLP :4318"]
-    GF["Grafana :3000"]
+    GF["Grafana :3001"]
   end
 
   G -. metrics .-> P
