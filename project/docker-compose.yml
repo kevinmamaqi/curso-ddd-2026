@@ -62,6 +62,7 @@ services:
     environment:
       - GF_AUTH_ANONYMOUS_ENABLED=true
       - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+      - GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH=/var/lib/grafana/dashboards/http-metrics.json
     volumes:
       - grafana_data:/var/lib/grafana
       - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
@@ -143,17 +144,69 @@ services:
       dockerfile: api-gateway/Dockerfile
     ports:
       - "8080:8080"
+      - "9466:9466"
     environment:
       - PORT=8080
       - HOST=0.0.0.0
       - INVENTORY_BASE_URL=http://inventory-service:3000
       - FULFILLMENT_BASE_URL=http://order-fulfillment-service:3002
-      - DOWNSTREAM_TRANSPORT=grpc
+      # Para el Día 10 (tracing HTTP) es más fácil empezar con HTTP.
+      # Cambia a `grpc` para usar los adaptadores gRPC del Gateway.
+      - DOWNSTREAM_TRANSPORT=http
       - INVENTORY_GRPC_ADDRESS=inventory-service:50051
       - FULFILLMENT_GRPC_ADDRESS=order-fulfillment-service:50052
+      - METRICS_PORT=9466
+      - OTEL_SERVICE_NAME=api-gateway
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://tempo:4318
     depends_on:
       - inventory-service
       - order-fulfillment-service
+      - tempo
+
+  demo-traffic:
+    image: curlimages/curl:8.6.0
+    profiles: ["demo"]
+    depends_on:
+      - api-gateway
+    command:
+      [
+        "sh",
+        "-lc",
+        "set -eu; \
+         echo 'Waiting for api-gateway...'; \
+         i=0; \
+         while [ $i -lt 60 ]; do \
+           if curl -fsS http://api-gateway:8080/health >/dev/null; then break; fi; \
+           sleep 1; \
+           i=$((i+1)); \
+         done; \
+         echo 'Generating demo traffic (CTRL+C to stop)...'; \
+         n=0; \
+         while true; do \
+           n=$((n+1)); \
+           ts=$(date +%s); \
+           case $((n%3)) in \
+             1) sku='11111111-1111-1111-1111-111111111111' ;; \
+             2) sku='22222222-2222-2222-2222-222222222222' ;; \
+             0) sku='33333333-3333-3333-3333-333333333333' ;; \
+           esac; \
+           orderId=\"ORDER-$ts-$n\"; \
+           reservationId=\"RES-$ts-$n\"; \
+           lineId=\"LINE-$n\"; \
+           curl -fsS -X POST http://api-gateway:8080/orders -H 'content-type: application/json' \
+             -d \"{\\\"orderId\\\":\\\"$orderId\\\",\\\"reservationId\\\":\\\"$reservationId\\\",\\\"lines\\\":[{\\\"lineId\\\":\\\"$lineId\\\",\\\"sku\\\":\\\"$sku\\\",\\\"qty\\\":1}]}\" >/dev/null || true; \
+           curl -fsS http://api-gateway:8080/orders/$orderId/status >/dev/null || true; \
+           curl -fsS http://api-gateway:8080/inventory/$sku >/dev/null || true; \
+           if [ $((n%5)) -eq 0 ]; then \
+             curl -fsS -X POST http://api-gateway:8080/orders/$orderId/cancel >/dev/null || true; \
+           fi; \
+           if [ $((n%7)) -eq 0 ]; then \
+             curl -fsS -X POST http://api-gateway:8080/orders -H 'content-type: application/json' \
+               -d \"{\\\"orderId\\\":\\\"BAD-$orderId\\\",\\\"reservationId\\\":\\\"BAD-$reservationId\\\",\\\"lines\\\":[{\\\"lineId\\\":\\\"$lineId\\\",\\\"sku\\\":\\\"$sku\\\",\\\"qty\\\":9999}]}\" >/dev/null || true; \
+           fi; \
+           sleep 2; \
+         done"
+      ]
 
 volumes:
   postgres_data:

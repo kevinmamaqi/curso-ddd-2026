@@ -19,6 +19,7 @@ import { integrationRouter } from './src/infra/http/integrationRouter'
 import { HandleReserveStockRequestedUseCase } from './src/application/HandleReserveStockRequestedUseCase'
 import { ReserveStockRequestedRabbitConsumer } from './src/infra/messaging/ReserveStockRequestedRabbitConsumer'
 import { startOtel } from './src/infra/observability/otel'
+import { registerHttpMetrics } from "./src/infra/observability/httpMetrics";
 import { ReservationRepositoryPostgres } from "./src/infra/repository/ReservationRepositoryPostgres";
 import { UnitOfWorkPostgres } from "./src/infra/repository/UnitOfWorkPostgres";
 import { ReplenishStockUseCase } from "./src/application/ReplenishStockUseCase";
@@ -87,6 +88,7 @@ async function start() {
             })()
             : { level: "info" as const }
     const app = Fastify({ logger: loggerConfig })
+    registerHttpMetrics(app, { serviceName: config.otelServiceName })
     app.register(healthRoutes)
     app.register(bookStockRouter, { deps: {
         reserveBookUseCase: container.resolve("reserveBookUseCase"),

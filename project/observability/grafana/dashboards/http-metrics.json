@@ -1,0 +1,86 @@
+{
+  "title": "HTTP Metrics (Course)",
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "Targets up",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "up",
+          "legendFormat": "{{job}}",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "x": 0, "y": 0, "w": 24, "h": 6 }
+    },
+    {
+      "type": "timeseries",
+      "title": "Request rate (req/s) by service",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum by (service) (rate(http_server_requests_total[5m]))",
+          "legendFormat": "{{service}}",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "x": 0, "y": 6, "w": 8, "h": 8 }
+    },
+    {
+      "type": "timeseries",
+      "title": "5xx error rate (req/s) by service",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum by (service) (rate(http_server_requests_total{status_code=~\"5..\"}[5m]))",
+          "legendFormat": "{{service}}",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "x": 8, "y": 6, "w": 8, "h": 8 }
+    },
+    {
+      "type": "timeseries",
+      "title": "p95 latency (ms) by service",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, service) (rate(http_server_request_duration_ms_bucket[5m])))",
+          "legendFormat": "{{service}}",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "x": 16, "y": 6, "w": 8, "h": 8 }
+    },
+    {
+      "type": "timeseries",
+      "title": "Top routes (req/s)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "topk(10, sum by (service, method, route) (rate(http_server_requests_total[5m])))",
+          "legendFormat": "{{service}} {{method}} {{route}}",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "x": 0, "y": 14, "w": 24, "h": 10 }
+    }
+  ],
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": { "type": "grafana", "uid": "-- Grafana --" },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  }
+}

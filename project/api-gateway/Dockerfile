@@ -10,5 +10,6 @@ COPY api-gateway/tsconfig.json api-gateway/main.ts ./
 COPY api-gateway/src ./src
 
 EXPOSE 8080
+EXPOSE 9466
 
 CMD ["npm", "run", "start"]

@@ -23,6 +23,7 @@ import { OrderStatusViewRepositoryPostgres } from "./src/infra/repository/OrderS
 import { UnitOfWorkPostgres } from "./src/infra/repository/UnitOfWorkPostgres";
 import { InventoryResultsRabbitConsumer } from "./src/infra/messaging/InventoryResultsRabbitConsumer";
 import { startOtel } from "./src/infra/observability/otel";
+import { registerHttpMetrics } from "./src/infra/observability/httpMetrics";
 import { FulfillmentGrpcServer } from "./src/infra/grpc/FulfillmentGrpcServer";
 import fs from "node:fs";
 import path from "node:path";
@@ -78,6 +79,7 @@ async function start() {
       })()
     : { level: "info" as const };
   const app = Fastify({ logger: loggerConfig });
+  registerHttpMetrics(app, { serviceName: config.otelServiceName });
 
   app.register(healthRoutes);
   app.register(orderRouter, {

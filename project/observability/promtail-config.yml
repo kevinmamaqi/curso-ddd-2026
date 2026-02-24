@@ -9,11 +9,18 @@ clients:
   - url: http://loki:3100/loki/api/v1/push
 
 scrape_configs:
-  - job_name: app-logs
+  - job_name: inventory-service
     static_configs:
-      - targets:
-          - localhost
+      - targets: [localhost]
         labels:
-          job: app
-          __path__: /logs/*.log
+          job: inventory-service
+          service: inventory-service
+          __path__: /logs/inventory-service.log
 
+  - job_name: order-fulfillment-service
+    static_configs:
+      - targets: [localhost]
+        labels:
+          job: order-fulfillment-service
+          service: order-fulfillment-service
+          __path__: /logs/order-fulfillment-service.log

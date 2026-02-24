@@ -1,5 +1,7 @@
 import Fastify from "fastify";
 import { loadConfig } from "./src/config/config";
+import { startOtel } from "./src/infra/observability/otel";
+import { registerHttpMetrics } from "./src/infra/observability/httpMetrics";
 import { InventoryHttpAdapter } from "./src/infra/adapters/InventoryHttpAdapter";
 import { FulfillmentHttpAdapter } from "./src/infra/adapters/FulfillmentHttpAdapter";
 import { InventoryGrpcAdapter } from "./src/infra/adapters/InventoryGrpcAdapter";
@@ -15,7 +17,13 @@ import { gatewayRoutes } from "./src/infra/http/routes";
 
 async function start() {
   const config = loadConfig();
+  const otelSdk = await startOtel({
+    serviceName: config.otelServiceName,
+    otlpEndpoint: config.otelExporterOtlpEndpoint,
+    metricsPort: config.metricsPort
+  });
   const app = Fastify({ logger: { level: "info" } });
+  registerHttpMetrics(app, { serviceName: config.otelServiceName });
 
   const inventory =
     config.downstreamTransport === "grpc"
@@ -85,6 +93,10 @@ async function start() {
       cancelOrder: (orderId: string, opts?: { correlationId?: string }) => fulfillment.cancelOrder(orderId, opts),
       getPickList: (orderId: string, opts?: { correlationId?: string }) => fulfillment.getPickList(orderId, opts)
     }
+  });
+
+  app.addHook("onClose", async () => {
+    await otelSdk.shutdown();
   });
 
   await app.listen({ port: config.port, host: config.host });
