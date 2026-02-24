@@ -1,5 +1,5 @@
 import { InventoryServicePort, InventoryStockView } from "../../application/ports/InventoryServicePort";
-import { fetchJson } from "./http/httpClient";
+import { DownstreamHttpError, fetchJson } from "./http/httpClient";
 
 export class InventoryHttpAdapter implements InventoryServicePort {
   constructor(
@@ -17,7 +17,13 @@ export class InventoryHttpAdapter implements InventoryServicePort {
     });
 
     if (out.status === 404) return null;
-    if (out.status >= 400) throw new Error("Inventory service error");
+    if (out.status >= 400) {
+      throw new DownstreamHttpError({
+        status: out.status,
+        body: out.body,
+        message: `Inventory service error (${out.status})`
+      });
+    }
     return out.body as InventoryStockView;
   }
 
@@ -33,7 +39,13 @@ export class InventoryHttpAdapter implements InventoryServicePort {
       body: { reservationId: params.reservationId, quantity: params.qty },
       headers: { "x-correlation-id": opts?.correlationId }
     });
-    if (out.status >= 400) throw new Error("Inventory service error");
+    if (out.status >= 400) {
+      throw new DownstreamHttpError({
+        status: out.status,
+        body: out.body,
+        message: `Inventory service error (${out.status})`
+      });
+    }
   }
 
   async releaseReservation(
@@ -48,7 +60,13 @@ export class InventoryHttpAdapter implements InventoryServicePort {
       body: { reservationId: params.reservationId },
       headers: { "x-correlation-id": opts?.correlationId }
     });
-    if (out.status >= 400) throw new Error("Inventory service error");
+    if (out.status >= 400) {
+      throw new DownstreamHttpError({
+        status: out.status,
+        body: out.body,
+        message: `Inventory service error (${out.status})`
+      });
+    }
   }
 
   async replenishStock(
@@ -63,7 +81,12 @@ export class InventoryHttpAdapter implements InventoryServicePort {
       body: { quantity: params.qty },
       headers: { "x-correlation-id": opts?.correlationId }
     });
-    if (out.status >= 400) throw new Error("Inventory service error");
+    if (out.status >= 400) {
+      throw new DownstreamHttpError({
+        status: out.status,
+        body: out.body,
+        message: `Inventory service error (${out.status})`
+      });
+    }
   }
 }
-

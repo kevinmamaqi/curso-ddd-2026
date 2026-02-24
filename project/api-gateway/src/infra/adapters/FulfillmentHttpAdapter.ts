@@ -4,7 +4,7 @@ import {
   PickList,
   PlaceOrderInput
 } from "../../application/ports/FulfillmentServicePort";
-import { fetchJson } from "./http/httpClient";
+import { DownstreamHttpError, fetchJson } from "./http/httpClient";
 
 export class FulfillmentHttpAdapter implements FulfillmentServicePort {
   constructor(
@@ -21,7 +21,13 @@ export class FulfillmentHttpAdapter implements FulfillmentServicePort {
       body: input,
       headers: { "x-correlation-id": opts?.correlationId }
     });
-    if (out.status >= 400) throw new Error("Fulfillment service error");
+    if (out.status >= 400) {
+      throw new DownstreamHttpError({
+        status: out.status,
+        body: out.body,
+        message: `Fulfillment service error (${out.status})`
+      });
+    }
   }
 
   async getOrder(orderId: string, opts?: { correlationId?: string }): Promise<FulfillmentOrderView | null> {
@@ -33,7 +39,13 @@ export class FulfillmentHttpAdapter implements FulfillmentServicePort {
       headers: { "x-correlation-id": opts?.correlationId }
     });
     if (out.status === 404) return null;
-    if (out.status >= 400) throw new Error("Fulfillment service error");
+    if (out.status >= 400) {
+      throw new DownstreamHttpError({
+        status: out.status,
+        body: out.body,
+        message: `Fulfillment service error (${out.status})`
+      });
+    }
     return out.body as FulfillmentOrderView;
   }
 
@@ -45,7 +57,13 @@ export class FulfillmentHttpAdapter implements FulfillmentServicePort {
       timeoutMs: this.timeoutMs,
       headers: { "x-correlation-id": opts?.correlationId }
     });
-    if (out.status >= 400) throw new Error("Fulfillment service error");
+    if (out.status >= 400) {
+      throw new DownstreamHttpError({
+        status: out.status,
+        body: out.body,
+        message: `Fulfillment service error (${out.status})`
+      });
+    }
   }
 
   async getPickList(orderId: string, opts?: { correlationId?: string }): Promise<PickList | null> {
@@ -57,8 +75,13 @@ export class FulfillmentHttpAdapter implements FulfillmentServicePort {
       headers: { "x-correlation-id": opts?.correlationId }
     });
     if (out.status === 404) return null;
-    if (out.status >= 400) throw new Error("Fulfillment service error");
+    if (out.status >= 400) {
+      throw new DownstreamHttpError({
+        status: out.status,
+        body: out.body,
+        message: `Fulfillment service error (${out.status})`
+      });
+    }
     return out.body as PickList;
   }
 }
-

@@ -39,6 +39,21 @@ Checklist rápido (si “no ves nada” en Grafana):
 2) Si los targets no están `UP`, abre Prometheus `/targets` y revisa qué servicio está caído.  
 3) Si los targets están `UP` pero no hay series, asegúrate de que hay tráfico (usa `--profile demo`).
 
+Checklist rápido (si `GET /inventory/:sku` da 404 para los SKUs del seed):
+
+1) Si ya tenías el volumen de Postgres creado de una ejecución anterior, resetea para re-ejecutar seeds:
+
+```bash
+docker compose -f project/docker-compose.yml down -v
+docker compose -f project/docker-compose.yml up -d --build
+```
+
+2) Verifica con:
+
+```bash
+curl -i http://localhost:8080/inventory/11111111-1111-1111-1111-111111111111
+```
+
 ---
 
 ## Módulo 1: Manejo de errores, retries y DLQ (RabbitMQ)

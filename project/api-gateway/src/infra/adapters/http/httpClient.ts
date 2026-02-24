@@ -1,3 +1,21 @@
+export class DownstreamHttpError extends Error {
+  readonly status: number;
+  readonly body: unknown;
+
+  constructor(params: { status: number; body: unknown; message: string }) {
+    super(params.message);
+    this.status = params.status;
+    this.body = params.body;
+  }
+}
+
+export function isDownstreamHttpError(err: unknown): err is DownstreamHttpError {
+  return (
+    err instanceof DownstreamHttpError &&
+    typeof (err as DownstreamHttpError).status === "number"
+  );
+}
+
 export async function fetchJson(params: {
   baseUrl: string;
   path: string;
@@ -40,4 +58,3 @@ function safeJsonParse(text: string): unknown | undefined {
     return undefined;
   }
 }
-

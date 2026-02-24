@@ -60,6 +60,7 @@ docker compose -f project/docker-compose.yml up -d --build
 ```
 
 Si es la primera vez que levantas el proyecto, Postgres se inicializa con datos semilla.
+Además, el `docker-compose.yml` incluye un job `seed-inventory` para asegurar que el inventario mínimo exista (útil si ya tenías un volumen viejo).
 Si ya lo levantaste antes y quieres volver a un estado “limpio” (re-ejecutar seeds):
 
 ```bash
