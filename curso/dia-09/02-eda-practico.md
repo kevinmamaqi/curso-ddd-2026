@@ -157,6 +157,18 @@ docker compose -f project/docker-compose.yml --profile demo up -d --build
 
 2) Provoca un fallo transitorio **corto** apagando Postgres ~15s (con `RABBITMQ_MAX_RETRIES=3` y TTL=10s tienes ~30s de “ventana” antes de DLQ):
 
+> Recomendación: para que sea más “limpio” (menos ruido), para el tráfico automático:
+>
+> ```bash
+> docker compose -f project/docker-compose.yml --profile demo stop demo-traffic
+> ```
+>
+> Luego haz el ejercicio y, al final, vuelve a arrancarlo:
+>
+> ```bash
+> docker compose -f project/docker-compose.yml --profile demo up -d demo-traffic
+> ```
+
 ```bash
 docker compose -f project/docker-compose.yml stop postgres
 sleep 15
@@ -180,6 +192,8 @@ docker compose -f project/docker-compose.yml start postgres
 - Las DLQs deberían quedarse **en 0** si el downtime fue corto.
 
 Si se te van mensajes a DLQ, reduce el tiempo de parada o sube `RABBITMQ_MAX_RETRIES` temporalmente.
+
+Nota técnica: parar/arrancar Postgres suele **cortar conexiones TCP**. Si un servicio mantiene una conexión larga, puede quedar “enganchado” a una conexión muerta. En ese caso, reinicia los servicios Node o usa un cliente con reconexión automática.
 
 ### 1.6 Ejercicio guiado D: recuperación de DLQ (replay controlado)
 
