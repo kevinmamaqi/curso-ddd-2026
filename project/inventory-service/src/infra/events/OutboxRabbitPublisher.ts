@@ -2,6 +2,7 @@ import { OutboxRepositoryPostgres } from "../repository/OutboxRepositoryPostgres
 import { AppConfig } from "../../config/config";
 import { connectRabbit, createConfirmChannel, assertTopology } from "../messaging/rabbitmq";
 import * as amqplib from "amqplib";
+import { getOutboxMetrics } from "../observability/messagingMetrics";
 
 type PublishOptions = Readonly<{
   intervalMs: number;
@@ -59,6 +60,8 @@ export class OutboxRabbitPublisher {
     const batch = await this.outboxRepo.getUnsent(batchSize);
 
     for (const msg of batch) {
+      const { outboxPublishedTotal, outboxPublishDurationMs } = getOutboxMetrics();
+      const startNs = process.hrtime.bigint();
       try {
         const body = Buffer.from(JSON.stringify(msg.body));
         const routingKey = msg.destination;
@@ -72,8 +75,25 @@ export class OutboxRabbitPublisher {
 
         await this.channel.waitForConfirms();
         await this.outboxRepo.markSent(msg.id);
+
+        outboxPublishedTotal.add(1, {
+          service: this.config.otelServiceName,
+          routing_key: routingKey,
+          outcome: "ok"
+        });
       } catch {
+        outboxPublishedTotal.add(1, {
+          service: this.config.otelServiceName,
+          routing_key: String(msg.destination),
+          outcome: "error"
+        });
         // retry later
+      } finally {
+        const endNs = process.hrtime.bigint();
+        const durationMs = Number(endNs - startNs) / 1e6;
+        outboxPublishDurationMs.record(durationMs, {
+          service: this.config.otelServiceName
+        });
       }
     }
   }

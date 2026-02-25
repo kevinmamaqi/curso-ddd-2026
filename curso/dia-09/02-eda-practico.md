@@ -372,12 +372,13 @@ En `http://localhost:3001`:
   - `HTTP Metrics (Course)` (home)
   - `Service Health (Course)`
 - Explore → Loki:
+  - `{service="api-gateway"}`
   - `{service="inventory-service"}`
   - `{service="order-fulfillment-service"}`
 - Explore → Tempo:
   - filtra por `service.name=api-gateway`, `service.name=inventory-service`, `service.name=order-fulfillment-service`
 
-Nota: en este repo, Promtail está configurado para enviar a Loki **solo** logs de `inventory-service` y `order-fulfillment-service` (archivos en `project/logs/`).
+Nota: en este repo, Promtail está configurado para enviar a Loki logs de `api-gateway`, `inventory-service` y `order-fulfillment-service` (archivos en `project/logs/`).
 
 ### Cómo hacerlo (paso a paso)
 
@@ -393,22 +394,37 @@ curl -fsS http://localhost:9090/targets
    - Panel `Prometheus: Target Up` debe mostrar `up=1` para tus servicios.
    - Panel `RabbitMQ: Ready Messages (all queues)` te dice si “se está acumulando trabajo”.
 
+3) Métricas OTel “del curso” (para EDA):
+
+- Consumo de mensajes (ok/retry/dlq) + duración:
+  - `eda_consumer_messages_total{service,queue,routing_key,outcome,attempt}`
+  - `eda_consumer_duration_ms_bucket{service,queue,routing_key,le}` (p95/p99 con `histogram_quantile`)
+- Publicación por Outbox:
+  - `eda_outbox_published_total{service,routing_key,outcome}`
+  - `eda_outbox_publish_duration_ms_bucket{service,le}`
+
+PromQL útiles:
+
+- Rate a DLQ (por servicio/cola):
+  - `sum by (service, queue) (rate(eda_consumer_messages_total{outcome="dlq"}[5m]))`
+- Rate de retries:
+  - `sum by (service, queue) (rate(eda_consumer_messages_total{outcome="retry"}[5m]))`
+
 #### Logs (Loki)
 
 1) Grafana → **Explore** → selecciona datasource `Loki`.
 2) Ejecuta una query por servicio:
+   - `{service="api-gateway"}`
    - `{service="inventory-service"}`
    - `{service="order-fulfillment-service"}`
 3) Ajusta el time range a “Last 15 minutes” si no ves nada.
 4) Para correlacionar con un caso:
    - si usaste el ejercicio E, busca `demo-inbox-001`
-   - si usaste demo-traffic, busca `ORDER-` o `RES-`
+   - si usaste demo-traffic, usa `x-correlation-id` (se envía como `RES-ORDER-...`) y filtra por `reqId`
 
-> Para logs del `api-gateway` (no enviados a Loki), usa `docker compose logs`:
->
-> ```bash
-> docker compose -f project/docker-compose.yml logs -f api-gateway
-> ```
+> Tip: en este repo, los servicios Fastify usan `x-correlation-id` como `reqId` en logs. Eso te permite buscar el flujo por el mismo id en Loki.
+
+> Alternativa (sin Loki): `docker compose -f project/docker-compose.yml logs -f api-gateway`
 
 #### Trazas (Tempo)
 

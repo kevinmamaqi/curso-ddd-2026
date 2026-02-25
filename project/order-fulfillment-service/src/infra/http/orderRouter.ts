@@ -8,6 +8,7 @@ import { CancelOrderUseCase } from "../../application/CancelOrderUseCase";
 import { ConfirmReadyToShipUseCase } from "../../application/ConfirmReadyToShipUseCase";
 import { GetPickListQuery } from "../../application/GetPickListQuery";
 import { ListOrdersByStatusQuery } from "../../application/ListOrdersByStatusQuery";
+import { recordOrderPlaced } from "../observability/businessMetrics";
 
 export type OrderRouterDeps = {
   placeOrderUseCase: PlaceOrderUseCase;
@@ -26,8 +27,16 @@ export const orderRouter: FastifyPluginAsync<{ deps: OrderRouterDeps }> = async 
   app.post("/orders", async (request, reply) => {
     try {
       await options.deps.placeOrderUseCase.execute(request.body as PlaceOrderCommand);
+      recordOrderPlaced({
+        serviceName: process.env.OTEL_SERVICE_NAME ?? "order-fulfillment-service",
+        outcome: "accepted"
+      });
       return reply.status(202).send();
     } catch (err) {
+      recordOrderPlaced({
+        serviceName: process.env.OTEL_SERVICE_NAME ?? "order-fulfillment-service",
+        outcome: "error"
+      });
       return mapErrorToHttpStatus(app, err, reply);
     }
   });

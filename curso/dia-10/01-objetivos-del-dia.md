@@ -63,12 +63,16 @@ Objetivo: poder ver en Grafana/Tempo “qué pasó” con un flujo completo:
 
 `POST /orders` → `ReserveStockRequested` → reserva en Inventory → `StockReserved/Rejected` → actualización de estado del pedido.
 
-Archivos típicos a tocar/crear en `project/`:
+En este repo **ya está implementado**. Puntos de entrada para ver “dónde vive”:
 
-- `project/order-fulfillment-service/src/infra/observability/otel.ts` (nuevo: SDK + exporters + instrumentations)
-- `project/order-fulfillment-service/main.ts` (inicializar OTel lo primero)
-- `project/inventory-service/src/infra/observability/otel.ts` (nuevo)
-- `project/inventory-service/main.ts` (inicializar OTel lo primero)
+- OTEL SDK por servicio:
+  - `project/api-gateway/src/infra/observability/otel.ts`
+  - `project/inventory-service/src/infra/observability/otel.ts`
+  - `project/order-fulfillment-service/src/infra/observability/otel.ts`
+- Métricas:
+  - HTTP: `project/*/src/infra/observability/httpMetrics.ts`
+  - EDA (Outbox/Consumers): `project/*/src/infra/observability/messagingMetrics.ts`
+- Stack de observabilidad (Grafana/Prometheus/Loki/Tempo): `project/docker-compose.yml` + `project/observability/*`
 
 Opcional (si instrumentas RabbitMQ con más detalle):
 
@@ -79,13 +83,18 @@ Opcional (si instrumentas RabbitMQ con más detalle):
 
 Objetivo: tener una checklist de cierre con:
 
-- métricas de negocio (`orders_created_total`, `reservations_succeeded_total`, `reservations_failed_total`)
+- 1–3 métricas de negocio (ej.: `orders_placed_total`, `reservations_total`)
 - métricas de operación (errores/retries/DLQ)
 - 1 diagrama C4 contenedores + 1 ADR relevante (ej.: RabbitMQ + Outbox/Inbox)
 
-Archivos típicos a tocar/crear:
+Dónde está la documentación “docs-as-code” del proyecto:
 
-- `project/artifacts/02-context-map.mmd` (actualizar si el mapa no refleja EDA)
-- `project/artifacts/03-integration-contracts.md` (confirmar `type/version/correlationId`)
-- `project/artifacts/05-c4.dsl` (nuevo, si quieres Structurizr DSL en el repo)
-- `project/artifacts/06-adr-001-eda-transport.md` (nuevo, decisión: broker + outbox/inbox + DLQ)
+- `project/__docs/02-context-map.mmd`
+- `project/__docs/03-integration-contracts.md`
+- (opcional) `project/__docs/05-c4.dsl`
+- (opcional) `project/__docs/06-adr-001-eda-transport.md`
+
+Dónde “se ve” en runtime (lo más visual para alumnos):
+
+- Grafana (`http://localhost:3001`) → dashboards `HTTP Metrics (Course)` y `Service Health (Course)`
+- Loki (Explore) → query `{service="api-gateway"} |= "<x-correlation-id>"`

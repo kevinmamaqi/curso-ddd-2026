@@ -59,6 +59,14 @@ Desde la raíz del repo:
 docker compose -f project/docker-compose.yml up -d --build
 ```
 
+Smoke-check rápido (cuando termina el build):
+
+```bash
+curl -fsS http://localhost:8080/health >/dev/null && echo "api-gateway OK"
+curl -fsS http://localhost:3002/health >/dev/null && echo "fulfillment OK"
+curl -fsS http://localhost:3000/health >/dev/null && echo "inventory OK"
+```
+
 Si es la primera vez que levantas el proyecto, Postgres se inicializa con datos semilla.
 Además, el `docker-compose.yml` incluye un job `seed-inventory` para asegurar que el inventario mínimo exista (útil si ya tenías un volumen viejo).
 Si ya lo levantaste antes y quieres volver a un estado “limpio” (re-ejecutar seeds):
@@ -101,6 +109,40 @@ Observabilidad (endpoints):
 - API Gateway metrics: `http://localhost:9466/metrics`
 - Inventory metrics: `http://localhost:9464/metrics`
 - Fulfillment metrics: `http://localhost:9465/metrics`
+
+En esos endpoints verás:
+
+- HTTP: `http_server_requests_total`, `http_server_request_duration_ms_*`
+- EDA (RabbitMQ + Outbox): `eda_consumer_messages_total`, `eda_consumer_duration_ms_*`, `eda_outbox_published_total`, `eda_outbox_publish_duration_ms_*`
+- Negocio (ejemplo): `orders_placed_total` (en `order-fulfillment-service`)
+
+## Qué “flujo” estamos observando (mapa mental)
+
+Este es el camino feliz que deberías poder seguir en **logs + métricas + trazas**:
+
+```mermaid
+sequenceDiagram
+  participant C as Cliente
+  participant G as api-gateway
+  participant F as order-fulfillment-service
+  participant PG as Postgres
+  participant MQ as RabbitMQ (course.events.v1)
+  participant I as inventory-service
+  participant Obs as Grafana Stack
+
+  C->>G: POST /orders (x-correlation-id)
+  G->>F: POST /orders (propaga x-correlation-id)
+  F->>PG: TX: save(order)+outbox.enqueue(ReserveStockRequested)
+  F->>MQ: OutboxPublisher publish rk fulfillment.reserve-stock-requested.v1
+  MQ->>I: deliver message
+  I->>PG: Inbox dedup + reserve stock
+  I->>MQ: publish rk inventory.stock-reserved.v1 / inventory.stock-rejected.v1
+  MQ->>F: deliver result
+  F->>PG: Inbox dedup + actualizar estado/read model
+  G->>Obs: logs + metrics + traces
+  F->>Obs: logs + metrics + traces
+  I->>Obs: logs + metrics + traces
+```
 
 ## Endpoints HTTP (todas las “rutas del proyecto”)
 
@@ -180,14 +222,19 @@ Ejemplo con `grpcurl` (si lo tienes instalado):
 
 > Inventory usa UUID como `sku`. (Se siembra automáticamente al levantar Postgres: `1111...`, `2222...`, `3333...`).
 
+Tip: para poder investigar “un caso” en Grafana, usa siempre `x-correlation-id` (lo usamos como `reqId` y lo propagamos a downstream).
+
 ### 1) Crear pedido (publica `ReserveStockRequested` vía Outbox → RabbitMQ)
 
 ```bash
+C=RES-ORDER-000001
+
 curl -i -X POST http://localhost:8080/orders \
-  -H "Content-Type: application/json" \
+  -H "content-type: application/json" \
+  -H "x-correlation-id: $C" \
   -d '{
     "orderId":"ORDER-000001",
-    "reservationId":"RES-000001",
+    "reservationId":"RES-ORDER-000001",
     "lines":[{"lineId":"LINE-0001","sku":"11111111-1111-1111-1111-111111111111","qty":2}]
   }'
 ```
@@ -195,19 +242,19 @@ curl -i -X POST http://localhost:8080/orders \
 ### 2) Consultar estado (read model)
 
 ```bash
-curl -i http://localhost:8080/orders/ORDER-000001/status
+curl -i -H "x-correlation-id: $C" http://localhost:8080/orders/ORDER-000001/status
 ```
 
 ### 3) Consultar inventario (read model)
 
 ```bash
-curl -i http://localhost:8080/inventory/11111111-1111-1111-1111-111111111111
+curl -i -H "x-correlation-id: $C" http://localhost:8080/inventory/11111111-1111-1111-1111-111111111111
 ```
 
 ### 4) Cancelar (publica `ReleaseReservationRequested` → Inventory libera reservas)
 
 ```bash
-curl -i -X POST http://localhost:8080/orders/ORDER-000001/cancel
+curl -i -X POST -H "x-correlation-id: $C" http://localhost:8080/orders/ORDER-000001/cancel
 ```
 
 ## Qué archivos mirar si algo falla
@@ -235,5 +282,24 @@ En Grafana `http://localhost:3001`:
 - Explore → Loki:
   - `{service="inventory-service"}`
   - `{service="order-fulfillment-service"}`
+  - por correlación (caso único):
+    - `{service="api-gateway"} |= "RES-ORDER-000001"`
 - Explore → Tempo:
-  - filtra por `service.name=api-gateway`, `service.name=inventory-service` o `service.name=order-fulfillment-service`
+  - filtra por `service.name=api-gateway`, `service.name=inventory-service` o `service.name=order-fulfillment-service` y abre una traza reciente
+
+Prometheus (para ver rápido “si hay vida”):
+
+```promql
+sum by (service) (rate(http_server_requests_total[1m]))
+sum by (service, queue, outcome) (rate(eda_consumer_messages_total[1m]))
+sum by (service, routing_key, outcome) (rate(eda_outbox_published_total[1m]))
+sum by (service, outcome) (rate(orders_placed_total[1m]))
+```
+
+RabbitMQ UI (`http://localhost:15672`) para “qué pasó en colas”:
+
+- Queues → revisa `messages ready` en:
+  - `inventory.reserve_stock_requested.v1`
+  - `inventory.release_reservation_requested.v1`
+  - `fulfillment.inventory_results.v1`
+- Si algo terminó en DLQ, revisa las `*.dlq` y el header `x-death` para ver el motivo/contador.

@@ -183,9 +183,12 @@ services:
       - DOWNSTREAM_TRANSPORT=http
       - INVENTORY_GRPC_ADDRESS=inventory-service:50051
       - FULFILLMENT_GRPC_ADDRESS=order-fulfillment-service:50052
+      - LOG_FILE=/logs/api-gateway.log
       - METRICS_PORT=9466
       - OTEL_SERVICE_NAME=api-gateway
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://tempo:4318
+    volumes:
+      - ./logs:/logs
     depends_on:
       - inventory-service
       - order-fulfillment-service
@@ -228,12 +231,12 @@ services:
            orderId=$$(printf 'ORDER-%06d' $$orderNum); \
            reservationId=RES-$$orderId; \
            lineId=$$(printf 'LINE-%04d' $$lineNum); \
-           curl -sS -X POST http://api-gateway:8080/orders -H 'content-type: application/json' \
+           curl -sS -X POST http://api-gateway:8080/orders -H 'content-type: application/json' -H \"x-correlation-id: $$reservationId\" \
              -d \"{\\\"orderId\\\":\\\"$$orderId\\\",\\\"reservationId\\\":\\\"$$reservationId\\\",\\\"lines\\\":[{\\\"lineId\\\":\\\"$$lineId\\\",\\\"sku\\\":\\\"$$sku\\\",\\\"qty\\\":1}]}\" >/dev/null || true; \
-           curl -sS http://api-gateway:8080/orders/$$orderId/status >/dev/null || true; \
-           curl -sS http://api-gateway:8080/inventory/$$sku >/dev/null || true; \
+           curl -sS -H \"x-correlation-id: $$reservationId\" http://api-gateway:8080/orders/$$orderId/status >/dev/null || true; \
+           curl -sS -H \"x-correlation-id: $$reservationId\" http://api-gateway:8080/inventory/$$sku >/dev/null || true; \
            if [ $$((n%5)) -eq 0 ]; then \
-             curl -sS -X POST http://api-gateway:8080/orders/$$orderId/cancel >/dev/null || true; \
+             curl -sS -X POST http://api-gateway:8080/orders/$$orderId/cancel -H \"x-correlation-id: $$reservationId\" >/dev/null || true; \
            fi; \
            if [ $$((n%7)) -eq 0 ]; then \
              badOrderNum=$$(( (((ts % 1000000) * 100) + ((n + 50) % 100)) % 1000000 )); \
@@ -242,7 +245,7 @@ services:
              badOrderId=$$(printf 'ORDER-%06d' $$badOrderNum); \
              badReservationId=RES-$$badOrderId; \
              badLineId=$$(printf 'LINE-%04d' $$badLineNum); \
-             curl -sS -X POST http://api-gateway:8080/orders -H 'content-type: application/json' \
+             curl -sS -X POST http://api-gateway:8080/orders -H 'content-type: application/json' -H \"x-correlation-id: $$badReservationId\" \
                -d \"{\\\"orderId\\\":\\\"$$badOrderId\\\",\\\"reservationId\\\":\\\"$$badReservationId\\\",\\\"lines\\\":[{\\\"lineId\\\":\\\"$$badLineId\\\",\\\"sku\\\":\\\"$$sku\\\",\\\"qty\\\":9999}]}\" >/dev/null || true; \
            fi; \
            sleep 2; \

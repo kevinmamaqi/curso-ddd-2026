@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { metrics } from "@opentelemetry/api";
+import { metrics, trace } from "@opentelemetry/api";
 
 const kStartNs = Symbol("http_metrics_start_ns");
 
@@ -18,6 +18,8 @@ export function registerHttpMetrics(app: FastifyInstance, params: { serviceName:
 
   app.addHook("onRequest", async (request) => {
     (request as any)[kStartNs] = process.hrtime.bigint();
+    const span = trace.getActiveSpan();
+    if (span) span.setAttribute("correlation_id", String(request.id));
   });
 
   app.addHook("onResponse", async (request, reply) => {
@@ -42,4 +44,3 @@ export function registerHttpMetrics(app: FastifyInstance, params: { serviceName:
     if (durationMs !== undefined) requestDurationMs.record(durationMs, attributes);
   });
 }
-

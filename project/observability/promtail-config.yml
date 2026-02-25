@@ -24,3 +24,11 @@ scrape_configs:
           job: order-fulfillment-service
           service: order-fulfillment-service
           __path__: /logs/order-fulfillment-service.log
+
+  - job_name: api-gateway
+    static_configs:
+      - targets: [localhost]
+        labels:
+          job: api-gateway
+          service: api-gateway
+          __path__: /logs/api-gateway.log

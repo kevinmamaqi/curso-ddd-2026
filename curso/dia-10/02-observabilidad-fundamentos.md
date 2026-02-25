@@ -13,7 +13,38 @@ Mapa rápido del tool‑chain (¿qué es cada cosa y para qué sirve?)
 | **OTEL Collector** *(opcional)* | Proxy/roteador que recibe telemetría, transforma y re‑exporta a uno o varios *back‑ends*.                                 | Desacopla tu app de la infraestructura de observabilidad; centraliza *sampling*, *batching* y seguridad. |
 | **Docker Compose**              | Orquestador local para levantar todo el stack rápidamente.                                                                | Nada de instalar cada pieza a mano; reproducible por los alumnos en cualquier OS.                        |
 
-> Nota: en el proyecto del curso (`project/`) levantamos Postgres + RabbitMQ (ver `.local/dia-08-referencia/docker-compose.yaml` como referencia). Para un stack completo de observabilidad con Loki/Tempo/Prometheus/Grafana, usa `curso/dia-10/ejercicios/docker-compose.yml`.
+> Nota (importante): en este repo **ya existe un stack completo** (Postgres + RabbitMQ + Prometheus + Grafana + Loki + Tempo + Promtail) en `project/docker-compose.yml`.  
+> `curso/dia-10/ejercicios/` **no existe** (si lo ves mencionado, es material antiguo).
+
+## 0.0 Arranque “one command” (el del proyecto)
+
+Desde la raíz del repo:
+
+```bash
+docker compose -f project/docker-compose.yml up -d --build
+```
+
+Opcional (genera tráfico continuo para ver señales sin hacer cURL manual):
+
+```bash
+docker compose -f project/docker-compose.yml --profile demo up -d --build
+```
+
+URLs del stack (copy/paste):
+
+- Grafana: `http://localhost:3001`
+- Prometheus: `http://localhost:9090` (Targets: `http://localhost:9090/targets`)
+- Loki: `http://localhost:3100`
+- Tempo: `http://localhost:3200`
+- RabbitMQ UI: `http://localhost:15672` (`guest` / `guest`)
+
+Rutas del proyecto (por el API Gateway):
+
+- API Gateway: `http://localhost:8080`
+  - `GET /health`
+  - `POST /orders`
+  - `GET /orders/:orderId/status`
+  - `GET /inventory/:sku`
 
 ### 0.1 Cómo se relacionan entre sí
 
@@ -60,7 +91,7 @@ flowchart TB
   - Beneficios: Reducción del MTTR (Mean Time To Resolution), mejora de la fiabilidad, comprensión proactiva del sistema.
 - Caso real de estudio: El E-commerce en Black Friday.
   - Escenario: Picos de tráfico, errores intermitentes en el checkout, quejas de usuarios.
-  - Pregunta: ¿Cómo correlacionamos un aumento en `http_server_requests_seconds_count{status="500"}` con las trazas específicas que fallaron y los logs detallados del error para identificar que un servicio de inventario aguas abajo estaba fallando por timeouts?
+  - Pregunta: ¿Cómo correlacionamos un aumento en `http_server_requests_total{status_code="500"}` con las trazas específicas que fallaron y los logs detallados del error para identificar que un servicio de inventario aguas abajo estaba fallando por timeouts?
 
 ```mermaid
 graph TD
@@ -172,166 +203,57 @@ En la práctica, la instrumentación suele ser:
 - **Automática** para HTTP/DB, y
 - **manual** (o con instrumentación específica) en publish/consume AMQP para enriquecer spans con `routingKey`, `queue`, `messageId`.
 
-### Ejercicio Práctico: Preparando el Entorno con Docker
+### Ejercicio práctico (proyecto real): ver logs + métricas + trazas “en 5 minutos”
 
-`curso/dia-10/ejercicios/docker-compose.yml` (stack completo con Tempo/Loki):
+Objetivo: que un alumno pueda decir “qué pasó” con un flujo usando sólo Grafana.
 
-```yaml
-services:
-  loki:
-    image: grafana/loki:2.9.0
-    ports:
-      - "3100:3100"
-    command: -config.file=/etc/loki/local-config.yaml
-
-  promtail: # Agente para enviar logs a Loki
-    image: grafana/promtail:2.9.0
-    volumes:
-      - /var/log:/var/log # O el path de logs de tus contenedores
-      - ./promtail-local-config.yml:/etc/promtail/config.yml
-      - ./ej1/app.log:/app/app.log
-    command: -config.file=/etc/promtail/config.yml
-
-  prometheus:
-    image: prom/prometheus:v2.47.0
-    ports:
-      - "9090:9090"
-    volumes:
-      - ./prometheus.yml:/etc/prometheus/prometheus.yml
-
-  grafana:
-    image: grafana/grafana:12.0.0
-    ports:
-      - "3000:3000"
-    environment:
-      - GF_AUTH_ANONYMOUS_ENABLED=true
-      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
-    volumes: # Para persistir dashboards y datasources
-      - grafana-data:/var/lib/grafana
-
-  tempo:
-    image: grafana/tempo:2.7.2
-    command: ["-config.file=/etc/tempo.yaml"]
-    volumes:
-      - ./tempo-config.yml:/etc/tempo.yaml
-    ports:
-      - "3200:3200" # Tempo API
-      - "4317:4317" # OTLP gRPC
-      - "4318:4318" # OTLP HTTP
-
-volumes:
-  grafana-data:
-```
-
-`promtail-local-config.yml`:
-
-```yaml
-server:
-  http_listen_port: 9080
-  grpc_listen_port: 0
-
-positions:
-  filename: /tmp/positions.yaml
-
-clients:
-  - url: http://loki:3100/loki/api/v1/push
-
-scrape_configs:
-  - job_name: system
-    static_configs:
-      - targets:
-          - localhost
-        labels:
-          job: varlogs
-          __path__: /var/log/*.log
-
-  - job_name: typescript-logger
-    static_configs:
-      - targets:
-          - localhost
-        labels:
-          job: typescript_logger
-          __path__: /app/app.log
-```
-
-`prometheus.yml`:
-
-```yaml
-global:
-  scrape_interval: 15s
-  evaluation_interval: 15s
-
-scrape_configs:
-  - job_name: prometheus
-    static_configs:
-      - targets: ["localhost:9090"]
-
-  - job_name: loki
-    static_configs:
-      - targets: ["loki:3100"]
-
-  - job_name: promtail
-    static_configs:
-      - targets: ["promtail:9080"]
-
-  - job_name: "node-app"
-    metrics_path: "/metrics"
-    static_configs:
-      - targets: ["host.docker.internal:9464"]
-```
-
-1. Levantar el Stack:
+1) Genera un request con `x-correlation-id`:
 
 ```bash
-docker compose up -d
+curl -i -X POST http://localhost:8080/orders \
+  -H "content-type: application/json" \
+  -H "x-correlation-id: RES-ORDER-000001" \
+  -d '{
+    "orderId":"ORDER-000001",
+    "reservationId":"RES-ORDER-000001",
+    "lines":[{"lineId":"LINE-0001","sku":"11111111-1111-1111-1111-111111111111","qty":1}]
+  }'
 ```
 
-> En macOS/Windows, `host.docker.internal` funciona por defecto. En Linux, usa la IP del host o ejecuta la app dentro del compose.
+2) Dashboards (Grafana → Dashboards):
 
-2.  Verificar Servicios:
+- `HTTP Metrics (Course)` → RPS/latencia por `service` y `route`
+- `Service Health (Course)` → colas, DLQ/retries y métricas EDA (`eda_*`)
 
-- Grafana: `http://localhost:3000`
-- Prometheus: `http://localhost:9090`
-- Loki (API, no UI por defecto): `http://localhost:3100/ready` (debería dar "ready"). Puede tardar hasta 15 segundos en estar listo. Probar con `curl -i http://localhost:3100/ready`
+3) Logs (Grafana → Explore → datasource **Loki**):
 
-3.  Generar Logs de Ejemplo:
+- `{service="api-gateway"}`
+- `{service="order-fulfillment-service"}`
+- `{service="inventory-service"}`
 
-Crear un archivo `example-log-generator.ts`:
+Y para ver un flujo por correlación:
 
-```ts
-import fs from "fs";
-import path from "path";
+- `{service="api-gateway"} |= "RES-ORDER-000001"`
 
-const logFile = path.join(__dirname, "app.log");
+4) Métricas “raw” (Prometheus):
 
-function log(message: string) {
-  const timestamp = new Date().toISOString();
-  fs.appendFileSync(logFile, `[${timestamp}] ${message}\n`);
-}
+- Targets: `http://localhost:9090/targets` (todo `UP`)
+- Ejemplo RPS por servicio:
 
-setInterval(() => {
-  log("Mensaje de log de ejemplo generado por TypeScript");
-}, 5000);
+```promql
+sum by (service) (rate(http_server_requests_total[1m]))
 ```
 
-Configurar promtail para que recolecte logs de `app.log`:
+5) Trazas (Grafana → Explore → datasource **Tempo**):
 
-```yaml
-scrape_configs:
-  - job_name: typescript-logger
-    static_configs:
-      - targets: ["localhost"]
-        labels:
-          job: typescript_logger
-          __path__: /app/app.log
-```
+- Filtra por servicio (`api-gateway`, `order-fulfillment-service`, `inventory-service`) y rango temporal “últimos 5–10 min”.
 
-4.  Explorar Logs en Grafana:
+Dónde vive la configuración del stack en el repo:
 
-- Ir a Grafana (`http://localhost:3000`).
-- Sección "Explore".
-- Seleccionar "Loki" como datasource (puede requerir configuración inicial si no está auto-detectado: URL `http://loki:3100`).
-  - Probar query: `filename = "app.log"` o similar.
+- `project/observability/prometheus.yml`
+- `project/observability/promtail-config.yml`
+- `project/observability/tempo-config.yml`
+- `project/observability/grafana/dashboards/*`
 
 ---
 
@@ -368,203 +290,22 @@ graph LR
 - **Manual:** Crear spans y métricas explícitamente en tu código para lógica de negocio específica.
 - **Demo en vivo (conceptual):** Mostrar una traza compleja en Jaeger o Tempo, explicando la jerarquía de spans, tags, logs en spans, y cómo ayuda a identificar cuellos de botella.
 
-**Ejercicio Práctico: Instrumentación Básica con OTEL en Node.js (15m):**
+**Ejercicio práctico (en este repo): localizar una traza real del proyecto**
 
-Usaremos el ejercicio ya incluido en este repo: `curso/dia-10/ejercicios/ej2` (Fastify + OTEL + métricas).
+En lugar de un “ejercicio aislado”, usamos el proyecto real (porque ya está instrumentado).
 
-1.  Navegar al directorio del ejercicio:
+1) Levanta el stack (sección 0.0) y genera una orden (sección “Ejercicio práctico” arriba).
 
-```bash
-cd curso/dia-10/ejercicios
-npm install
-```
+2) En Grafana (`http://localhost:3001`) → **Explore**:
 
-2.  Verifica que el stack de observabilidad esté levantado (Tempo escucha OTLP en `4318`):
+- **Tempo**: filtra por `service.name` (`api-gateway` / `order-fulfillment-service` / `inventory-service`) y abre una traza reciente.
+- **Loki**: busca el mismo `x-correlation-id` (se usa como `reqId`).
 
-```bash
-docker compose up -d
-```
+3) Localiza el código de instrumentación:
 
-3.  Revisa la configuración OTEL (ya existe): `curso/dia-10/ejercicios/ej2/tracing.ts`.
-
-```typescript
-// tracing.ts
-import { NodeSDK } from "@opentelemetry/sdk-node";
-import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
-import { getNodeAutoInstrumentations } from "@opentelemetry/auto-instrumentations-node";
-import { resourceFromAttributes } from "@opentelemetry/resources";
-import { SemanticResourceAttributes } from "@opentelemetry/semantic-conventions";
-import { BatchSpanProcessor } from "@opentelemetry/sdk-trace-base";
-import { PrometheusExporter } from "@opentelemetry/exporter-prometheus";
-
-// Allow customization via env vars
-const serviceName = process.env.OTEL_SERVICE_NAME || "my-node-app-typescript";
-const otlpEndpoint =
-  process.env.OTEL_EXPORTER_OTLP_ENDPOINT || "http://localhost:4318";
-
-// Setup OTLP exporters
-const traceExporter = new OTLPTraceExporter({
-  url: `${otlpEndpoint}/v1/traces`,
-});
-const prometheusExporter = new PrometheusExporter(
-  { port: 9464, endpoint: "/metrics" },
-  () => console.log(`Metrics available at http://localhost:9464/metrics`)
-);
-
-// Initialize SDK with batching and auto-instrumentation
-export const sdk = new NodeSDK({
-  resource: resourceFromAttributes({
-    [SemanticResourceAttributes.SERVICE_NAME]: serviceName,
-  }),
-  traceExporter,
-  metricReader: prometheusExporter,
-  instrumentations: [getNodeAutoInstrumentations()],
-  spanProcessor: new BatchSpanProcessor(traceExporter),
-});
-
-try {
-  sdk.start();
-  console.log("OpenTelemetry SDK started...");
-} catch (error) {
-  console.error("Error starting OpenTelemetry SDK:", error);
-}
-
-// Graceful shutdown
-process.on("SIGTERM", () => {
-  sdk
-    .shutdown()
-    .then(() => console.log("Tracing and metrics terminated"))
-    .catch((err) => console.error("Error terminating OTEL SDK", err))
-    .finally(() => process.exit(0));
-});
-```
-
-4.  La app del ejercicio ya importa `./tracing` primero: `curso/dia-10/ejercicios/ej2/app.ts`.
-
-5.  Ejecuta la app:
-
-```bash
-OTEL_SERVICE_NAME=dia10-ej2 \
-OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 \
-npm run app
-```
-
-6.  Genera tráfico y mira:
-
-- Trazas: Grafana (Tempo) en `http://localhost:3000`
-- Métricas: `http://localhost:9464/metrics`
-
-```typescript
-import "./tracing"; // ensure OTEL SDK is initialized
-import Fastify, { FastifyRequest, FastifyReply } from "fastify";
-import { trace, SpanStatusCode } from "@opentelemetry/api";
-
-const app = Fastify({ logger: true });
-const port = Number(process.env.PORT) || 3002;
-
-// Helper for manual traced operations
-async function manualTraceOperation(reply: FastifyReply) {
-  const tracer = trace.getTracer("app-tracer");
-  const span = tracer.startSpan("complex-operation", {
-    attributes: { "custom.attribute": "exampleValue" },
-  });
-
-  try {
-    // simulate work
-    await new Promise((r) => setTimeout(r, 100));
-    span.addEvent("sub-operation-A-complete");
-    await new Promise((r) => setTimeout(r, 150));
-
-    // random error simulation
-    if (Math.random() < 0.2) {
-      throw new Error("Simulated internal error");
-    }
-
-    span.setStatus({ code: SpanStatusCode.OK });
-    reply.send({ message: "Response after manual traced operation" });
-  } catch (err: any) {
-    span.recordException(err);
-    span.setStatus({ code: SpanStatusCode.ERROR, message: err.message });
-    reply.status(500).send({ error: err.message });
-  } finally {
-    span.end();
-  }
-}
-
-// Routes
-app.get("/", async (_req, reply) => {
-  reply.send({ message: "Hello World with OTEL!" });
-});
-
-app.get("/fast", async (_req, reply) => {
-  reply.send({ message: "Fast response!" });
-});
-
-app.get("/slow", async (_req, reply) => {
-  await manualTraceOperation(reply);
-});
-
-app
-  .listen({ port, host: "0.0.0.0" })
-  .then(() => app.log.info(`Server listening on port ${port}`))
-  .catch((err) => {
-    app.log.error(err);
-    process.exit(1);
-  });
-```
-
-5.  Tempo ya está incluido en `curso/dia-10/ejercicios/docker-compose.yml`. Si montas tu propio compose, añade este bloque:
-
-```yaml
-# ... (otros servicios)
-tempo:
-  image: grafana/tempo:2.7.2
-  command: ["-config.file=/etc/tempo.yaml"]
-  volumes:
-    - ./tempo-config.yml:/etc/tempo.yaml # Configuración básica de Tempo
-  ports:
-    - "3200:3200" # Tempo UI & API
-    - "4317:4317" # OTLP gRPC
-    - "4318:4318" # OTLP HTTP
-    # - "14268:14268" # Jaeger HTTP (si se usa)
-```
-
-_Y un `tempo-config.yml` simple:_
-
-```yaml
-server:
-  http_listen_port: 3200
-distributor:
-  receivers:
-    otlp:
-      protocols:
-        http:
-          endpoint: 0.0.0.0:4318
-        grpc:
-          endpoint: 0.0.0.0:4317
-ingester:
-  trace_idle_period: 10s
-storage:
-  trace:
-    backend: local
-    local:
-      path: /tmp/tempo/traces
-```
-
-6.  Reiniciar Docker Compose:
-
-`docker compose up -d --force-recreate`
-
-7.  Ejecutar la app Node.js:
-
-`node app.ts` (o configurar para que corra en Docker).
-
-8.  Ver Trazas en Grafana/Tempo:
-
-- En Grafana, ir a "Explore".
-- Seleccionar "Tempo" como datasource (URL `http://tempo:3200`).
-- En la pestaña "Search", buscar trazas (puede tardar unos segundos en aparecer). Puedes filtrar por `service.name="my-node-app"`.
-- Analizar una traza, especialmente la de `/slow`.
+- `project/*/src/infra/observability/otel.ts` (SDK + OTLP exporter + Prometheus exporter)
+- `project/*/src/infra/observability/httpMetrics.ts` (métricas HTTP)
+- `project/*/src/infra/observability/messagingMetrics.ts` (métricas EDA: consumers/outbox)
 
 ---
 
@@ -668,148 +409,45 @@ _Explicación:_ Cada paso del journey puede generar métricas que ayudan a enten
 
 **Ejercicio Práctico: Instrumentar Métricas Custom y Crear Dashboard (20m):**
 
-0. En este repo, la parte “infra” ya está preparada:
+En este repo no necesitamos “montar otro Prometheus”: el stack del proyecto **ya scrapea** las métricas OTEL de los 3 servicios.
 
-- Dependencias: `curso/dia-10/ejercicios/package.json`
-- Exportador Prometheus: `curso/dia-10/ejercicios/ej2/tracing.ts` (expone `http://localhost:9464/metrics`)
+Objetivo del ejercicio: añadir **1 KPI** simple (un contador) y verlo en Grafana.
 
-_Nota:_ La configuración de métricas con OTEL puede ser un poco más compleja de integrar con `NodeSDK` que las trazas. Para el ejercicio, la configuración del `PrometheusExporter` y `MeterProvider` es clave. El `NodeSDK` debería idealmente manejar la inicialización del `MeterProvider`. Si no, el `MeterProvider` debe ser configurado y sus `Meter`s usados explícitamente.
+1) Crea un contador de negocio:
 
-1.  Instrumentar una métrica de negocio en `curso/dia-10/ejercicios/ej2/app.ts`:
+- Archivo: `project/order-fulfillment-service/src/infra/observability/businessMetrics.ts`
+- Métrica: `orders_placed_total` con labels `{service, outcome}`
 
-```ts
-import "./tracing"; // ensure OTEL SDK is initialized
-import Fastify, { FastifyRequest, FastifyReply } from "fastify";
-import { trace, SpanStatusCode } from "@opentelemetry/api";
+2) Incrementa el contador cuando se acepta el `POST /orders`:
 
-// NEW: metrics API
-import { metrics, MetricAttributes } from "@opentelemetry/api";
+- Archivo: `project/order-fulfillment-service/src/infra/http/orderRouter.ts`
 
-// create a Meter (namespaces your metrics)
-const meter = metrics.getMeter("my-node-app-business");
-
-// define a Counter for “successful operations”
-const successCounter = meter.createCounter("complex_operation_success_total", {
-  description: "Total number of successfully completed complex operations",
-});
-
-// define a Histogram for operation durations (in milliseconds)
-const latencyHistogram = meter.createHistogram(
-  "complex_operation_duration_ms",
-  {
-    description: "Duration of complex-operation in milliseconds",
-  }
-);
-
-const app = Fastify({ logger: true });
-const port = Number(process.env.PORT) || 3002;
-
-// Helper for manual traced operations
-async function manualTraceOperation(reply: FastifyReply) {
-  const tracer = trace.getTracer("app-tracer");
-  const span = tracer.startSpan("complex-operation", {
-    attributes: { "custom.attribute": "exampleValue" },
-  });
-
-  const start = Date.now();
-
-  try {
-    // simulate work
-    await new Promise((r) => setTimeout(r, 100));
-    span.addEvent("sub-operation-A-complete");
-    await new Promise((r) => setTimeout(r, 150));
-
-    // random error simulation
-    if (Math.random() < 0.2) {
-      throw new Error("Simulated internal error");
-    }
-
-    // ✅ business metric: count one success
-    successCounter.add(1, { outcome: "success" } as MetricAttributes);
-
-    span.setStatus({ code: SpanStatusCode.OK });
-    reply.send({ message: "Response after manual traced operation" });
-  } catch (err: any) {
-    successCounter.add(0, { outcome: "failure" } as MetricAttributes);
-
-    span.recordException(err);
-    span.setStatus({ code: SpanStatusCode.ERROR, message: err.message });
-    reply.status(500).send({ error: err.message });
-  } finally {
-    const duration = Date.now() - start;
-    latencyHistogram.record(duration, { route: "/slow" } as MetricAttributes);
-
-    span.end();
-  }
-}
-
-// Routes
-app.get("/", async (_req, reply) => {
-  reply.send({ message: "Hello World with OTEL!" });
-});
-
-app.get("/fast", async (_req, reply) => {
-  reply.send({ message: "Fast response!" });
-});
-
-app.get("/slow", async (_req, reply) => {
-  await manualTraceOperation(reply);
-});
-
-app
-  .listen({ port, host: "0.0.0.0" })
-  .then(() => app.log.info(`Server listening on port ${port}`))
-  .catch((err) => {
-    app.log.error(err);
-    process.exit(1);
-  });
-
-```
-
-1.  Configurar Prometheus para scrapear la app Node.js:
-
-- Añadir un nuevo job a `prometheus.yml` (del `ejercicio1-docker-stack` o crear uno nuevo). Asumiendo que la app Node.js está en la misma red Docker que Prometheus y se llama `my_node_app`:
-
-```yaml
-# prometheus.yml
-# ... (global config, alertmanager config)
-- job_name: 'node-app'
-    metrics_path: '/metrics'
-    static_configs:
-      # - targets: ['localhost:9464']
-      # use host.docker.internal on Docker Desktop (Mac/Windows)
-      - targets: ['host.docker.internal:9464']
-```
-
-- **Importante:** Si la app Node.js corre fuera de Docker (ej. `node app.js` en tu host), y Prometheus dentro de Docker, `host.docker.internal` es el DNS para acceder al host desde un contenedor Docker (en Mac/Windows). Para Linux, sería la IP del `docker0` bridge o la IP principal del host. Si Node.js también está en un contenedor, usa el nombre del servicio y puerto interno.
-
-3.  Reiniciar `docker-compose` y la app Node.js.
-
-4.  Generar tráfico (ejemplo con el proyecto del curso):
+3) Rebuild:
 
 ```bash
-curl -X POST "http://localhost:3002/replenish" \
-  -H "Content-Type: application/json" \
-  -d '{"sku":"ABC-1234-AB","quantity":10}'
-
-curl -X POST "http://localhost:3002/replenish" \
-  -H "Content-Type: application/json" \
-  -d '{"sku":"ABC-1234-AB","quantity":5}'
+docker compose -f project/docker-compose.yml up -d --build
 ```
+
+4) Genera tráfico:
 
 ```bash
-$ curl http://localhost:9464/metrics | grep complex_operation
-complex_operation_success_total{outcome="success"} 42
-complex_operation_duration_ms_bucket{…}
+curl -i -X POST http://localhost:8080/orders \
+  -H "content-type: application/json" \
+  -H "x-correlation-id: RES-ORDER-000002" \
+  -d '{
+    "orderId":"ORDER-000002",
+    "reservationId":"RES-ORDER-000002",
+    "lines":[{"lineId":"LINE-0002","sku":"11111111-1111-1111-1111-111111111111","qty":1}]
+  }'
 ```
 
-5.  Crear un Dashboard Básico en Grafana:
+5) Verifica en Prometheus (`http://localhost:9090`) con:
 
-- Ir a Grafana (`http://localhost:3000`).
-- Asegurar que Prometheus es un datasource (URL `http://prometheus:9090`).
-  - Crear un nuevo Dashboard.
-  - Añadir panel \> "Time series" o "Stat".
-  - Query (Total Órdenes): `sum(orders_total)` o `sum(rate(complex_operation_success_total[5m])) by (outcome)` para tasa.
+```promql
+sum by (service, outcome) (rate(orders_placed_total[1m]))
+```
+
+6) Grafana (`http://localhost:3001`) → **Explore (Prometheus)** o crea un panel con esa query.
 
 ---
 
@@ -903,7 +541,7 @@ groups:
   - name: NodeAppAlerts
     rules:
       - alert: HighErrorRateMyNodeApp
-        expr: sum(rate(http_server_requests_seconds_count{job="my-node-app", status=~"5.."}[1m])) / sum(rate(http_server_requests_seconds_count{job="my-node-app"}[1m])) > 0.1
+        expr: sum(rate(http_server_requests_total{status_code=~"5.."}[1m])) / sum(rate(http_server_requests_total[1m])) > 0.1
         for: 1m # Duración para que la condición sea verdadera antes de disparar
         labels:
               severity: critical
@@ -921,7 +559,7 @@ groups:
               description: "El servicio {{ $labels.job }} ha procesado menos de 1 orden en los últimos 5 minutos."
 ```
 
-_(Nota: `http_server_requests_seconds_count` es una métrica estándar que OTEL podría generar para instrumentación HTTP. Asegúrate que los nombres de métricas y labels coincidan con lo que tu app exporta)._
+_(Nota: en el `project/` del curso exportamos `http_server_requests_total` y `http_server_request_duration_ms_*` con labels `service`, `route`, `method`, `status_code`. Asegúrate que tus queries usen esos nombres/labels)._
 
 1.  Reiniciar `docker-compose` (Prometheus y Alertmanager).
 
@@ -965,7 +603,7 @@ Usa trazas para identificar el *critical path* y métricas para validar saturaci
 
 1.  Identificar la Métrica Afectada (Grafana/Prometheus):
 
-- ¿Qué métrica buscarían? (Ej: `http_server_requests_seconds_bucket{path="/api/v1/user/:id/profile", service_name="servicio-a"}`).
+- ¿Qué métrica buscarían? (Ej: `http_server_request_duration_ms_bucket{route=\"/api/v1/user/:id/profile\", service=\"servicio-a\"}`).
 - Visualizar P95 o P99 de latencia. Confirmar el problema.
 - Buscar correlación con tasas de error si las hay.
 

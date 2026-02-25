@@ -4,6 +4,7 @@ import { BookRepositoryPort } from "./ports/BookRepositoryPort"
 import { Book } from "../domain/entities/BookStock"
 import { ReserveInventoryCommand, ReserveInventoryUseCase } from "./ReserveInventoryUseCase"
 import { BookEventsPublisherPort } from "./ports/BookEventsPublisherPort"
+import { noopLogger } from "./ports/LoggerPort"
 import {
   InventoryView,
   InventoryViewListFilters,
@@ -96,7 +97,7 @@ describe("ReserveInventoryUseCase", () => {
     const viewRepo = new InventoryViewRepositoryMock()
     const projector = new InventoryViewProjector(viewRepo)
     const uow = new UnitOfWorkMock()
-    const uc = new ReserveInventoryUseCase(repo, reservationRepo, events, projector, uow)
+    const uc = new ReserveInventoryUseCase(repo, reservationRepo, events, projector, uow, noopLogger)
 
     const cmd: ReserveInventoryCommand = {
       bookId: book.id.toValue(),

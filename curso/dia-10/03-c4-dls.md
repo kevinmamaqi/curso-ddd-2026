@@ -6,13 +6,13 @@
 
 ## Aplicado al proyecto del curso (recomendación práctica)
 
-En `project/` ya tenemos documentación base en `project/artifacts/` (context map, contratos, reflexión). En esta sesión, la idea es **convertirlo en docs-as-code** mínimo viable:
+En `project/` ya tenemos documentación base en `project/__docs/` (context map, contratos, reflexión). En esta sesión, la idea es **convertirlo en docs-as-code** mínimo viable:
 
 - Mantener los artefactos que ya existen:
-  - `project/artifacts/02-context-map.mmd`
-  - `project/artifacts/03-integration-contracts.md`
+  - `project/__docs/02-context-map.mmd`
+  - `project/__docs/03-integration-contracts.md`
 - Añadir 1 diagrama C4 “contenedores” como fuente de verdad (opcional con Structurizr DSL):
-  - `project/artifacts/05-c4.dsl` (nuevo)
+  - `project/__docs/05-c4.dsl` (nuevo)
 
 ### Diagrama (C4 Contenedores, en mermaid)
 
@@ -45,7 +45,7 @@ flowchart LR
 
 ### Structurizr DSL (snippet mínimo)
 
-Ejemplo (para guardar en `project/artifacts/05-c4.dsl`):
+Ejemplo (para guardar en `project/__docs/05-c4.dsl`):
 
 ```dsl
 workspace "Curso DDD Hex Node" "C4 del proyecto del curso" {

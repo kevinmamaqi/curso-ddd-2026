@@ -3,6 +3,7 @@ import { AppConfig } from "../../config/config";
 import { assertTopology, connectRabbit, createChannel } from "./rabbitmq";
 import { HandleReleaseReservationRequestedUseCase } from "../../application/HandleReleaseReservationRequestedUseCase";
 import { IntegrationMessage, ReleaseReservationRequestedEvent } from "../integration/contracts";
+import { getConsumerMessagingMetrics } from "../observability/messagingMetrics";
 
 const MAIN_QUEUE = "inventory.release_reservation_requested.v1";
 const DLQ_QUEUE = "inventory.release_reservation_requested.dlq";
@@ -96,16 +97,28 @@ export class ReleaseReservationRequestedRabbitConsumer {
   private async handleMessage(msg: amqplib.ConsumeMessage): Promise<void> {
     if (!this.channel) return;
 
+    const startNs = process.hrtime.bigint();
     const headers = (msg.properties.headers ?? {}) as Record<string, unknown>;
     const attempt = (Number(headers["x-attempt"] ?? 0) || 0) + 1;
     const maxRetries = this.config.rabbitmqMaxRetries;
 
     try {
+      const { consumedTotal } = getConsumerMessagingMetrics();
       const parsed = JSON.parse(msg.content.toString());
       const body = parsed as IntegrationMessage<ReleaseReservationRequestedEvent>;
       await this.useCase.execute(body);
       this.channel.ack(msg);
-    } catch {
+
+      consumedTotal.add(1, {
+        service: this.config.otelServiceName,
+        queue: MAIN_QUEUE,
+        routing_key: msg.fields.routingKey,
+        outcome: "ok",
+        attempt: String(attempt)
+      });
+    } catch (err) {
+      const { consumedTotal } = getConsumerMessagingMetrics();
+      const errorType = err instanceof SyntaxError ? "json_parse" : "handler";
       if (attempt <= maxRetries) {
         headers["x-attempt"] = attempt;
         this.channel.sendToQueue(RETRY_QUEUE_10S, msg.content, {
@@ -116,9 +129,36 @@ export class ReleaseReservationRequestedRabbitConsumer {
           headers
         });
         this.channel.ack(msg);
+
+        consumedTotal.add(1, {
+          service: this.config.otelServiceName,
+          queue: MAIN_QUEUE,
+          routing_key: msg.fields.routingKey,
+          outcome: "retry",
+          attempt: String(attempt),
+          error_type: errorType
+        });
       } else {
         this.channel.nack(msg, false, false);
+
+        consumedTotal.add(1, {
+          service: this.config.otelServiceName,
+          queue: MAIN_QUEUE,
+          routing_key: msg.fields.routingKey,
+          outcome: "dlq",
+          attempt: String(attempt),
+          error_type: errorType
+        });
       }
+    } finally {
+      const endNs = process.hrtime.bigint();
+      const durationMs = Number(endNs - startNs) / 1e6;
+      const { consumeDurationMs } = getConsumerMessagingMetrics();
+      consumeDurationMs.record(durationMs, {
+        service: this.config.otelServiceName,
+        queue: MAIN_QUEUE,
+        routing_key: msg.fields.routingKey
+      });
     }
   }
 }

@@ -6,6 +6,7 @@ import { BookRepositoryPort } from "./ports/BookRepositoryPort";
 import { InventoryViewProjector } from "./InventoryViewProjector";
 import { ReservationRepositoryPort } from "./ports/ReservationRepositoryPort";
 import { UnitOfWorkPort } from "./ports/UnitOfWorkPort";
+import { LoggerPort } from "./ports/LoggerPort";
 
 export type ReserveBookCommand = {
     bookId: string;
@@ -20,9 +21,14 @@ export class ReserveBookUseCase {
         private readonly bookEvents: BookEventsPublisherPort,
         private readonly inventoryViewProjector: InventoryViewProjector,
         private readonly uow: UnitOfWorkPort,
+        private readonly logger: LoggerPort,
     ) {}
 
     async execute(command: ReserveBookCommand) {
+        this.logger.info(
+            { reservationId: command.reservationId, bookId: command.bookId, quantity: command.quantity },
+            "ReserveBookUseCase.execute"
+        )
         await this.uow.runInTransaction(async () => {
             // 1. Validar el input.
             const bookId = BookId.of(command.bookId)
@@ -35,6 +41,10 @@ export class ReserveBookUseCase {
                 sku: bookId.toValue(),
             })
             if (alreadyReserved !== null) {
+                this.logger.info(
+                    { reservationId: reservationId.toValue(), bookId: bookId.toValue() },
+                    "ReserveBookUseCase.idempotent_skip"
+                )
                 return
             }
 
@@ -43,6 +53,7 @@ export class ReserveBookUseCase {
 
             // 3. Si no existe, not found
             if (!book) {
+                this.logger.warn({ bookId: bookId.toValue() }, "ReserveBookUseCase.book_not_found")
                 throw new Error(`Book not found`);
             }
 

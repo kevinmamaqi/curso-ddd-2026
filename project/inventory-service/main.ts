@@ -28,8 +28,25 @@ import { GetReservationsByReservationIdQuery } from "./src/application/GetReserv
 import { HandleReleaseReservationRequestedUseCase } from "./src/application/HandleReleaseReservationRequestedUseCase";
 import { ReleaseReservationRequestedRabbitConsumer } from "./src/infra/messaging/ReleaseReservationRequestedRabbitConsumer";
 import { InventoryGrpcServer } from "./src/infra/grpc/InventoryGrpcServer";
+import { FastifyLoggerAdapter } from "./src/infra/logger/FastifyLoggerAdapter";
 import fs from "node:fs";
 import path from "node:path";
+import { Writable } from "node:stream";
+import { randomUUID } from "node:crypto";
+
+function createDualLogStream(filePath: string): Writable {
+  const fileStream = fs.createWriteStream(filePath, { flags: "a" });
+  return new Writable({
+    write(chunk: Buffer | string, enc: BufferEncoding, cb: (err?: Error) => void) {
+      let pending = 2;
+      const check = () => {
+        if (--pending === 0) cb();
+      };
+      process.stdout.write(chunk, enc, check);
+      fileStream.write(chunk, enc, check);
+    },
+  });
+}
 
 async function start() {
     const config = loadConfig()
@@ -65,7 +82,11 @@ async function start() {
         integrationEvents: asClass(InventoryIntegrationEventsPublisher).singleton(),
         handleReserveStockRequestedUseCase: asClass(HandleReserveStockRequestedUseCase).singleton(),
         reserveStockRequestedConsumer: asClass(ReserveStockRequestedRabbitConsumer)
-          .inject((cradle: any) => ({ useCase: cradle.handleReserveStockRequestedUseCase }))
+          .inject((cradle: any) => ({
+            config: cradle.config,
+            useCase: cradle.handleReserveStockRequestedUseCase,
+            logger: cradle.logger,
+          }))
           .singleton(),
         handleReleaseReservationRequestedUseCase: asClass(HandleReleaseReservationRequestedUseCase).singleton(),
         releaseReservationRequestedConsumer: asClass(ReleaseReservationRequestedRabbitConsumer)
@@ -84,10 +105,20 @@ async function start() {
         config.logFile
             ? (() => {
                 fs.mkdirSync(path.dirname(config.logFile as string), { recursive: true })
-                return { level: "info" as const, file: config.logFile }
-            })()
+                return { level: "info" as const, stream: createDualLogStream(config.logFile) }
+              })()
             : { level: "info" as const }
-    const app = Fastify({ logger: loggerConfig })
+    const app = Fastify({
+        logger: loggerConfig,
+        genReqId: (req) => {
+            const raw = (req.headers as any)?.["x-correlation-id"]
+            const correlationId = typeof raw === "string" && raw.trim() ? raw.trim() : undefined
+            return correlationId ?? randomUUID()
+        },
+    })
+    container.register({
+        logger: asValue(new FastifyLoggerAdapter(app.log.child({ component: "inventory-service" }))),
+    })
     registerHttpMetrics(app, { serviceName: config.otelServiceName })
     app.register(healthRoutes)
     app.register(bookStockRouter, { deps: {

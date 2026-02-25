@@ -14,6 +14,9 @@ import { ReserveStockViaGatewayUseCase } from "./src/application/use-cases/Reser
 import { ReplenishStockViaGatewayUseCase } from "./src/application/use-cases/ReplenishStockViaGatewayUseCase";
 import { ReleaseReservationViaGatewayUseCase } from "./src/application/use-cases/ReleaseReservationViaGatewayUseCase";
 import { gatewayRoutes } from "./src/infra/http/routes";
+import fs from "node:fs";
+import path from "node:path";
+import { randomUUID } from "node:crypto";
 
 async function start() {
   const config = loadConfig();
@@ -22,7 +25,20 @@ async function start() {
     otlpEndpoint: config.otelExporterOtlpEndpoint,
     metricsPort: config.metricsPort
   });
-  const app = Fastify({ logger: { level: "info" } });
+  const loggerConfig = config.logFile
+    ? (() => {
+        fs.mkdirSync(path.dirname(config.logFile as string), { recursive: true });
+        return { level: "info" as const, file: config.logFile };
+      })()
+    : { level: "info" as const };
+  const app = Fastify({
+    logger: loggerConfig,
+    genReqId: (req) => {
+      const raw = req.headers["x-correlation-id"];
+      const correlationId = typeof raw === "string" && raw.trim() ? raw.trim() : undefined;
+      return correlationId ?? randomUUID();
+    }
+  });
   registerHttpMetrics(app, { serviceName: config.otelServiceName });
 
   const inventory =

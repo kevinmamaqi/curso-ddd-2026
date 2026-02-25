@@ -21,6 +21,12 @@ export type GatewayRoutesDeps = {
 };
 
 export const gatewayRoutes: FastifyPluginAsync<{ deps: GatewayRoutesDeps }> = async (app, options) => {
+  const getOrCreateCorrelationId = (request: any): string => {
+    const raw = request.headers?.["x-correlation-id"];
+    const fromHeader = typeof raw === "string" && raw.trim() ? raw.trim() : undefined;
+    return fromHeader ?? String(request.id);
+  };
+
   app.get("/health", async (_req, reply) => {
     const out = await options.deps.health.execute();
     return reply.status(out.ok ? 200 : 503).send(out);
@@ -28,7 +34,8 @@ export const gatewayRoutes: FastifyPluginAsync<{ deps: GatewayRoutesDeps }> = as
 
   app.post("/orders", async (request, reply) => {
     try {
-      const correlationId = (request.headers["x-correlation-id"] as string | undefined) ?? undefined;
+      const correlationId = getOrCreateCorrelationId(request);
+      reply.header("x-correlation-id", correlationId);
       await options.deps.placeOrder.execute(request.body as any, { correlationId });
       return reply.status(202).send();
     } catch (err) {
@@ -39,7 +46,8 @@ export const gatewayRoutes: FastifyPluginAsync<{ deps: GatewayRoutesDeps }> = as
   app.get("/orders/:orderId", async (request, reply) => {
     try {
       const { orderId } = request.params as { orderId: string };
-      const correlationId = (request.headers["x-correlation-id"] as string | undefined) ?? undefined;
+      const correlationId = getOrCreateCorrelationId(request);
+      reply.header("x-correlation-id", correlationId);
       const out = await options.deps.getOrderWithDetails.execute(orderId, { correlationId });
       if (!out) return reply.status(404).send({ code: "NOT_FOUND", message: "Order not found" });
       return reply.send(out);
@@ -51,7 +59,8 @@ export const gatewayRoutes: FastifyPluginAsync<{ deps: GatewayRoutesDeps }> = as
   app.get("/orders/:orderId/status", async (request, reply) => {
     try {
       const { orderId } = request.params as { orderId: string };
-      const correlationId = (request.headers["x-correlation-id"] as string | undefined) ?? undefined;
+      const correlationId = getOrCreateCorrelationId(request);
+      reply.header("x-correlation-id", correlationId);
       const out = await options.deps.getOrderWithDetails.execute(orderId, { correlationId });
       if (!out) return reply.status(404).send({ code: "NOT_FOUND", message: "Order not found" });
       return reply.send(out.order);
@@ -63,7 +72,8 @@ export const gatewayRoutes: FastifyPluginAsync<{ deps: GatewayRoutesDeps }> = as
   app.post("/orders/:orderId/cancel", async (request, reply) => {
     try {
       const { orderId } = request.params as { orderId: string };
-      const correlationId = (request.headers["x-correlation-id"] as string | undefined) ?? undefined;
+      const correlationId = getOrCreateCorrelationId(request);
+      reply.header("x-correlation-id", correlationId);
       await options.deps.cancelOrder(orderId, { correlationId });
       return reply.status(202).send();
     } catch (err) {
@@ -74,7 +84,8 @@ export const gatewayRoutes: FastifyPluginAsync<{ deps: GatewayRoutesDeps }> = as
   app.get("/orders/:orderId/pick-list", async (request, reply) => {
     try {
       const { orderId } = request.params as { orderId: string };
-      const correlationId = (request.headers["x-correlation-id"] as string | undefined) ?? undefined;
+      const correlationId = getOrCreateCorrelationId(request);
+      reply.header("x-correlation-id", correlationId);
       const out = await options.deps.getPickList(orderId, { correlationId });
       if (!out) return reply.status(404).send({ code: "NOT_FOUND", message: "Order not found" });
       return reply.send(out);
@@ -86,7 +97,8 @@ export const gatewayRoutes: FastifyPluginAsync<{ deps: GatewayRoutesDeps }> = as
   app.get("/inventory/:sku", async (request, reply) => {
     try {
       const { sku } = request.params as { sku: string };
-      const correlationId = (request.headers["x-correlation-id"] as string | undefined) ?? undefined;
+      const correlationId = getOrCreateCorrelationId(request);
+      reply.header("x-correlation-id", correlationId);
       const out = await options.deps.getInventoryStock.execute(sku, { correlationId });
       if (!out) return reply.status(404).send({ code: "NOT_FOUND", message: "Stock not found" });
       return reply.send(out);
@@ -99,7 +111,8 @@ export const gatewayRoutes: FastifyPluginAsync<{ deps: GatewayRoutesDeps }> = as
     try {
       const { sku } = request.params as { sku: string };
       const body = (request.body ?? {}) as any;
-      const correlationId = (request.headers["x-correlation-id"] as string | undefined) ?? undefined;
+      const correlationId = getOrCreateCorrelationId(request);
+      reply.header("x-correlation-id", correlationId);
       await options.deps.reserveStock.execute(
         { sku, reservationId: String(body.reservationId), quantity: Number(body.quantity) },
         { correlationId }
@@ -114,7 +127,8 @@ export const gatewayRoutes: FastifyPluginAsync<{ deps: GatewayRoutesDeps }> = as
     try {
       const { sku } = request.params as { sku: string };
       const body = (request.body ?? {}) as any;
-      const correlationId = (request.headers["x-correlation-id"] as string | undefined) ?? undefined;
+      const correlationId = getOrCreateCorrelationId(request);
+      reply.header("x-correlation-id", correlationId);
       await options.deps.replenishStock.execute(
         { sku, quantity: Number(body.quantity) },
         { correlationId }
@@ -129,7 +143,8 @@ export const gatewayRoutes: FastifyPluginAsync<{ deps: GatewayRoutesDeps }> = as
     try {
       const { sku } = request.params as { sku: string };
       const body = (request.body ?? {}) as any;
-      const correlationId = (request.headers["x-correlation-id"] as string | undefined) ?? undefined;
+      const correlationId = getOrCreateCorrelationId(request);
+      reply.header("x-correlation-id", correlationId);
       await options.deps.releaseReservation.execute(
         { sku, reservationId: String(body.reservationId) },
         { correlationId }

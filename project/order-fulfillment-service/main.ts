@@ -27,6 +27,7 @@ import { registerHttpMetrics } from "./src/infra/observability/httpMetrics";
 import { FulfillmentGrpcServer } from "./src/infra/grpc/FulfillmentGrpcServer";
 import fs from "node:fs";
 import path from "node:path";
+import { randomUUID } from "node:crypto";
 
 async function start() {
   const container = createContainer({ injectionMode: InjectionMode.CLASSIC });
@@ -78,7 +79,14 @@ async function start() {
         return { level: "info" as const, file: config.logFile };
       })()
     : { level: "info" as const };
-  const app = Fastify({ logger: loggerConfig });
+  const app = Fastify({
+    logger: loggerConfig,
+    genReqId: (req) => {
+      const raw = req.headers["x-correlation-id"];
+      const correlationId = typeof raw === "string" && raw.trim() ? raw.trim() : undefined;
+      return correlationId ?? randomUUID();
+    }
+  });
   registerHttpMetrics(app, { serviceName: config.otelServiceName });
 
   app.register(healthRoutes);

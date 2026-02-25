@@ -8,6 +8,7 @@ import { BookId } from "../domain/va/BookId"
 import { ReserveBookUseCase } from "./ReserveBookUseCase"
 import { InventoryViewProjector } from "./InventoryViewProjector"
 import { BookEventsPublisherPort } from "./ports/BookEventsPublisherPort"
+import { noopLogger } from "./ports/LoggerPort"
 import { ReservationRepositoryPostgres } from "../infra/repository/ReservationRepositoryPostgres"
 import { UnitOfWorkPostgres } from "../infra/repository/UnitOfWorkPostgres"
 
@@ -62,7 +63,7 @@ describeIntegration("InventoryViewProjector (integration)", () => {
 
     const reservationRepo = new ReservationRepositoryPostgres(dbClient)
     const uow = new UnitOfWorkPostgres(dbClient)
-    const uc = new ReserveBookUseCase(bookRepo, reservationRepo, events, projector, uow)
+    const uc = new ReserveBookUseCase(bookRepo, reservationRepo, events, projector, uow, noopLogger)
     await uc.execute({
       bookId: uuid,
       quantity: 1,
