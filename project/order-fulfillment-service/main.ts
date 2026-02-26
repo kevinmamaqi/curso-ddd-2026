@@ -61,9 +61,6 @@ async function start() {
     listOrdersByStatusQuery: asClass(ListOrdersByStatusQuery).singleton(),
     handleInventoryIntegrationEventUseCase: asClass(HandleInventoryIntegrationEventUseCase).singleton(),
     outboxPublisher: asClass(OutboxRabbitPublisher).singleton(),
-    inventoryResultsConsumer: asClass(InventoryResultsRabbitConsumer)
-      .inject((cradle: any) => ({ useCase: cradle.handleInventoryIntegrationEventUseCase }))
-      .singleton(),
     grpcServer: asClass(FulfillmentGrpcServer).singleton()
   });
 
@@ -110,7 +107,11 @@ async function start() {
   const publisher = container.resolve<OutboxRabbitPublisher>("outboxPublisher");
   await publisher.start({ intervalMs: 500 });
 
-  const consumer = container.resolve<InventoryResultsRabbitConsumer>("inventoryResultsConsumer");
+  const consumer = new InventoryResultsRabbitConsumer(
+    config,
+    container.resolve("handleInventoryIntegrationEventUseCase"),
+    app.log.child({ component: "order-fulfillment-service" })
+  );
   await consumer.start();
 
   const grpcServer = container.resolve<FulfillmentGrpcServer>("grpcServer");

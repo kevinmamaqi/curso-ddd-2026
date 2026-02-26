@@ -10,6 +10,7 @@ export type IntegrationEvent<TType extends string, TPayload> = Readonly<{
 export type IntegrationMessage<TEvent extends IntegrationEvent<string, unknown>> = Readonly<{
   messageId: string;
   correlationId: string;
+  headers?: Readonly<Record<string, string>>;
   event: TEvent;
 }>;
 

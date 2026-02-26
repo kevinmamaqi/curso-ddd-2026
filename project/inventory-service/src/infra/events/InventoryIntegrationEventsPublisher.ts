@@ -6,6 +6,7 @@ import {
 } from "../integration/contracts";
 import { OutboxRepositoryPostgres } from "../repository/OutboxRepositoryPostgres";
 import { InventoryIntegrationEventsPublisherPort } from "../../application/ports/InventoryIntegrationEventsPublisherPort";
+import { context, propagation } from "@opentelemetry/api";
 
 export class InventoryIntegrationEventsPublisher implements InventoryIntegrationEventsPublisherPort {
   constructor(
@@ -53,9 +54,16 @@ export class InventoryIntegrationEventsPublisher implements InventoryIntegration
     const msg: IntegrationMessage<typeof event> = {
       messageId,
       correlationId: params.reservationId,
+      headers: this.captureTraceHeaders(),
       event
     };
 
     await this.outboxRepo.enqueue({ id: messageId, destination, body: msg });
+  }
+
+  private captureTraceHeaders(): Record<string, string> {
+    const carrier: Record<string, string> = {};
+    propagation.inject(context.active(), carrier);
+    return carrier;
   }
 }

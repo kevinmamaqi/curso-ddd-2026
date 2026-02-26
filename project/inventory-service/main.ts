@@ -81,17 +81,7 @@ async function start() {
         outboxPublisher: asClass(OutboxRabbitPublisher).singleton(),
         integrationEvents: asClass(InventoryIntegrationEventsPublisher).singleton(),
         handleReserveStockRequestedUseCase: asClass(HandleReserveStockRequestedUseCase).singleton(),
-        reserveStockRequestedConsumer: asClass(ReserveStockRequestedRabbitConsumer)
-          .inject((cradle: any) => ({
-            config: cradle.config,
-            useCase: cradle.handleReserveStockRequestedUseCase,
-            logger: cradle.logger,
-          }))
-          .singleton(),
         handleReleaseReservationRequestedUseCase: asClass(HandleReleaseReservationRequestedUseCase).singleton(),
-        releaseReservationRequestedConsumer: asClass(ReleaseReservationRequestedRabbitConsumer)
-          .inject((cradle: any) => ({ useCase: cradle.handleReleaseReservationRequestedUseCase }))
-          .singleton(),
         grpcServer: asClass(InventoryGrpcServer).singleton(),
     })
 
@@ -116,9 +106,9 @@ async function start() {
             return correlationId ?? randomUUID()
         },
     })
-    container.register({
-        logger: asValue(new FastifyLoggerAdapter(app.log.child({ component: "inventory-service" }))),
-    })
+    const logger = new FastifyLoggerAdapter(app.log.child({ component: "inventory-service" }))
+    container.register({ logger: asValue(logger) })
+
     registerHttpMetrics(app, { serviceName: config.otelServiceName })
     app.register(healthRoutes)
     app.register(bookStockRouter, { deps: {
@@ -136,11 +126,17 @@ async function start() {
     const publisher = container.resolve<OutboxRabbitPublisher>("outboxPublisher")
     await publisher.start({ intervalMs: 500 })
 
-    const consumer = container.resolve<ReserveStockRequestedRabbitConsumer>("reserveStockRequestedConsumer")
+    const consumer = new ReserveStockRequestedRabbitConsumer(
+      config,
+      container.resolve("handleReserveStockRequestedUseCase"),
+      logger
+    )
     await consumer.start()
 
-    const releaseConsumer =
-      container.resolve<ReleaseReservationRequestedRabbitConsumer>("releaseReservationRequestedConsumer")
+    const releaseConsumer = new ReleaseReservationRequestedRabbitConsumer(
+      config,
+      container.resolve("handleReleaseReservationRequestedUseCase")
+    )
     await releaseConsumer.start()
 
     const grpcServer = container.resolve<InventoryGrpcServer>("grpcServer")

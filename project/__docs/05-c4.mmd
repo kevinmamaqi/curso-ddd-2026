@@ -1,0 +1,30 @@
+%% C4 combined view — Curso DDD Hex Node (project/)
+%% Single .mmd = single diagram. Flowchart combines System Context + Container in one render.
+
+flowchart TB
+    Student["Cliente/Estudiante"]
+
+    subgraph CourseProject["Course Project"]
+        direction TB
+        Gateway["api-gateway<br/><i>Node.js + Fastify</i>"]
+        Fulfillment["order-fulfillment-service<br/><i>Node.js + Fastify</i>"]
+        Inventory["inventory-service<br/><i>Node.js + Fastify</i>"]
+    end
+
+    Postgres[("Postgres<br/><i>DBs: inventory, fulfillment</i>")]
+    Rabbit["RabbitMQ<br/><i>course.events.v1 / course.dlx.v1</i>"]
+    Obs["Grafana Stack<br/><i>Prometheus + Loki + Tempo</i>"]
+
+    Student -->|HTTP| Gateway
+    Gateway -->|HTTP/gRPC| Fulfillment
+    Gateway -->|HTTP/gRPC| Inventory
+
+    Fulfillment -->|SQL| Postgres
+    Inventory -->|SQL| Postgres
+
+    Fulfillment -->|AMQP Outbox/Consumers| Rabbit
+    Inventory -->|AMQP Outbox/Consumers| Rabbit
+
+    Gateway -->|OTLP traces + metrics + logs| Obs
+    Fulfillment -->|OTLP traces + metrics + logs| Obs
+    Inventory -->|OTLP traces + metrics + logs| Obs

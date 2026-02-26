@@ -26,7 +26,7 @@
   - Análisis de resultados
   - Consejos y buenas prácticas para siguientes pasos
 
-## Objetivos y agenda
+## Objetivos
 
 | Actividad                                | Resultado                        |
 |------------------------------------------|----------------------------------|
@@ -39,23 +39,9 @@
 
 ---
 
-## Agenda (3h)
-
-| Hora | Bloque | Contenido |
-|------|--------|-----------|
-| 16:00–16:10 | Repaso y objetivos | Qué cerramos hoy y cómo medimos “done”. |
-| 16:10–16:40 | Observabilidad | Logs, métricas y trazas: modelo mental y señales. |
-| 16:40–17:10 | Métricas y dashboards | RED/GOLD, Prometheus y paneles accionables. |
-| 17:10–17:20 | Descanso | Pausa breve. |
-| 17:20–17:50 | OpenTelemetry | Instrumentación mínima y propagación de contexto. |
-| 17:50–18:20 | Estandarización | C4, ADRs, convenciones y Definition of Done. |
-| 18:20–19:00 | Cierre del proyecto | Checklist final, revisión y siguientes pasos. |
-
----
-
 ## Aplicado al proyecto del curso (lo que cerramos hoy)
 
-La sesión 9 nos dejó el sistema **resiliente**. Hoy lo dejamos **operable** y **comunicable**:
+El objetivo del día anterior era dejar el sistema **resiliente**. Hoy lo dejamos **operable** y **comunicable**:
 
 ### Wiring 1 — Telemetría mínima por servicio (trazas + métricas)
 
@@ -93,8 +79,3 @@ Dónde está la documentación “docs-as-code” del proyecto:
 - `project/__docs/03-integration-contracts.md`
 - (opcional) `project/__docs/05-c4.dsl`
 - (opcional) `project/__docs/06-adr-001-eda-transport.md`
-
-Dónde “se ve” en runtime (lo más visual para alumnos):
-
-- Grafana (`http://localhost:3001`) → dashboards `HTTP Metrics (Course)` y `Service Health (Course)`
-- Loki (Explore) → query `{service="api-gateway"} |= "<x-correlation-id>"`

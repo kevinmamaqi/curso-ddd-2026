@@ -4,6 +4,8 @@ import { HandleInventoryIntegrationEventUseCase } from "../../application/Handle
 import { assertTopology, connectRabbit, createChannel } from "./rabbitmq";
 import { IntegrationMessage, InventoryIntegrationEvents } from "../../domain/events";
 import { getConsumerMessagingMetrics } from "../observability/messagingMetrics";
+import { ROOT_CONTEXT, context, propagation } from "@opentelemetry/api";
+import type { FastifyBaseLogger } from "fastify";
 
 const MAIN_QUEUE = "fulfillment.inventory_results.v1";
 const DLQ_QUEUE = "fulfillment.inventory_results.dlq";
@@ -21,7 +23,8 @@ export class InventoryResultsRabbitConsumer {
 
   constructor(
     private readonly config: AppConfig,
-    private readonly useCase: HandleInventoryIntegrationEventUseCase
+    private readonly useCase: HandleInventoryIntegrationEventUseCase,
+    private readonly logger: FastifyBaseLogger
   ) {}
 
   async start(): Promise<void> {
@@ -50,6 +53,7 @@ export class InventoryResultsRabbitConsumer {
       { noAck: false }
     );
     this.consumerTag = res.consumerTag;
+    this.logger.info({ queue: MAIN_QUEUE, consumerTag: res.consumerTag }, "InventoryResultsRabbitConsumer.started");
   }
 
   async stop(): Promise<void> {
@@ -110,69 +114,123 @@ export class InventoryResultsRabbitConsumer {
     const headers = (msg.properties.headers ?? {}) as Record<string, unknown>;
     const attempt = (Number(headers["x-attempt"] ?? 0) || 0) + 1;
     const maxRetries = this.config.rabbitmqMaxRetries;
+    const correlationId = msg.properties.correlationId?.toString() ?? "unknown";
+    const messageId = msg.properties.messageId?.toString() ?? "unknown";
 
     const retryQueue =
       msg.fields.routingKey === RK_STOCK_RESERVED
         ? RETRY_QUEUE_RESERVED_10S
         : RETRY_QUEUE_REJECTED_10S;
 
-    try {
-      const { consumedTotal } = getConsumerMessagingMetrics();
-      const parsed = JSON.parse(msg.content.toString());
-      const body = parsed as IntegrationMessage<InventoryIntegrationEvents>;
-      await this.useCase.execute(body);
-      this.channel.ack(msg);
+    const parentCtx = propagation.extract(ROOT_CONTEXT, this.normalizeHeaders(msg.properties.headers));
+    await context.with(parentCtx, async () => {
+      this.logger.info(
+        { queue: MAIN_QUEUE, messageId, correlationId, attempt, routingKey: msg.fields.routingKey },
+        "InventoryResultsRabbitConsumer.message_received"
+      );
 
-      consumedTotal.add(1, {
-        service: this.config.otelServiceName,
-        queue: MAIN_QUEUE,
-        routing_key: msg.fields.routingKey,
-        outcome: "ok",
-        attempt: String(attempt)
-      });
-    } catch (err) {
-      const { consumedTotal } = getConsumerMessagingMetrics();
-      const errorType = err instanceof SyntaxError ? "json_parse" : "handler";
-      if (attempt <= maxRetries) {
-        headers["x-attempt"] = attempt;
-        this.channel.sendToQueue(retryQueue, msg.content, {
-          persistent: true,
-          contentType: msg.properties.contentType ?? "application/json",
-          messageId: msg.properties.messageId,
-          correlationId: msg.properties.correlationId,
-          headers
-        });
-        this.channel.ack(msg);
+      try {
+        const { consumedTotal } = getConsumerMessagingMetrics();
+        const parsed = JSON.parse(msg.content.toString());
+        const body = parsed as IntegrationMessage<InventoryIntegrationEvents>;
+        await this.useCase.execute(body);
+        this.channel!.ack(msg);
+
+        this.logger.info(
+          { queue: MAIN_QUEUE, messageId, correlationId, attempt },
+          "InventoryResultsRabbitConsumer.message_acked"
+        );
 
         consumedTotal.add(1, {
           service: this.config.otelServiceName,
           queue: MAIN_QUEUE,
           routing_key: msg.fields.routingKey,
-          outcome: "retry",
-          attempt: String(attempt),
-          error_type: errorType
+          outcome: "ok",
+          attempt: String(attempt)
         });
-      } else {
-        this.channel.nack(msg, false, false);
+      } catch (err) {
+        const { consumedTotal } = getConsumerMessagingMetrics();
+        const errorType = err instanceof SyntaxError ? "json_parse" : "handler";
+        const reason = err instanceof Error ? err.message : String(err);
 
-        consumedTotal.add(1, {
+        this.logger.error(
+          {
+            queue: MAIN_QUEUE,
+            messageId,
+            correlationId,
+            attempt,
+            maxRetries,
+            errorType,
+            reason,
+            stack: err instanceof Error ? err.stack : undefined
+          },
+          "InventoryResultsRabbitConsumer.message_failed"
+        );
+
+        if (attempt <= maxRetries) {
+          headers["x-attempt"] = attempt;
+          this.channel!.sendToQueue(retryQueue, msg.content, {
+            persistent: true,
+            contentType: msg.properties.contentType ?? "application/json",
+            messageId: msg.properties.messageId,
+            correlationId: msg.properties.correlationId,
+            headers
+          });
+          this.channel!.ack(msg);
+
+          this.logger.error(
+            { queue: MAIN_QUEUE, messageId, correlationId, attempt, nextAttempt: attempt + 1, retryQueue },
+            "InventoryResultsRabbitConsumer.message_retry_scheduled"
+          );
+
+          consumedTotal.add(1, {
+            service: this.config.otelServiceName,
+            queue: MAIN_QUEUE,
+            routing_key: msg.fields.routingKey,
+            outcome: "retry",
+            attempt: String(attempt),
+            error_type: errorType
+          });
+        } else {
+          this.channel!.nack(msg, false, false);
+
+          this.logger.error(
+            { queue: MAIN_QUEUE, messageId, correlationId, attempt, dlq: DLQ_QUEUE },
+            "InventoryResultsRabbitConsumer.message_sent_to_dlq"
+          );
+
+          consumedTotal.add(1, {
+            service: this.config.otelServiceName,
+            queue: MAIN_QUEUE,
+            routing_key: msg.fields.routingKey,
+            outcome: "dlq",
+            attempt: String(attempt),
+            error_type: errorType
+          });
+        }
+      } finally {
+        const endNs = process.hrtime.bigint();
+        const durationMs = Number(endNs - startNs) / 1e6;
+        const { consumeDurationMs } = getConsumerMessagingMetrics();
+        consumeDurationMs.record(durationMs, {
           service: this.config.otelServiceName,
           queue: MAIN_QUEUE,
-          routing_key: msg.fields.routingKey,
-          outcome: "dlq",
-          attempt: String(attempt),
-          error_type: errorType
+          routing_key: msg.fields.routingKey
         });
       }
-    } finally {
-      const endNs = process.hrtime.bigint();
-      const durationMs = Number(endNs - startNs) / 1e6;
-      const { consumeDurationMs } = getConsumerMessagingMetrics();
-      consumeDurationMs.record(durationMs, {
-        service: this.config.otelServiceName,
-        queue: MAIN_QUEUE,
-        routing_key: msg.fields.routingKey
-      });
+    });
+  }
+
+  private normalizeHeaders(headers: amqplib.MessageProperties["headers"]): Record<string, string> {
+    const result: Record<string, string> = {};
+    const source = (headers ?? {}) as Record<string, unknown>;
+    for (const [key, value] of Object.entries(source)) {
+      if (typeof value === "string") {
+        result[key] = value;
+      } else if (Buffer.isBuffer(value)) {
+        result[key] = value.toString("utf8");
+      }
     }
+    return result;
   }
 }

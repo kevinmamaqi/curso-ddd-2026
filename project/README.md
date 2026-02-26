@@ -6,6 +6,10 @@ Este `project/` corresponde al **estado final** alineado con:
 - Día 9: DLQ + retry básico (TTL) + idempotencia
 - Día 10: Observabilidad (OTel + Prometheus + Loki + Tempo + Grafana) + cierre
 
+Referencia rápida “del curso al código” (por qué DDD/Hex/CQRS/EDA aplican y dónde verlo):
+
+- `project/COURSE-REFERENCE.md`
+
 ## Qué vas a levantar (topología)
 
 ```mermaid

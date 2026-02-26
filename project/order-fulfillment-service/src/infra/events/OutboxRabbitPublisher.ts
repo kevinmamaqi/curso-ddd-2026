@@ -70,7 +70,8 @@ export class OutboxRabbitPublisher {
           persistent: true,
           contentType: "application/json",
           messageId: msg.id,
-          correlationId: (msg.body as any)?.correlationId ?? msg.id
+          correlationId: (msg.body as any)?.correlationId ?? msg.id,
+          headers: (msg.body as any)?.headers
         });
 
         await this.channel.waitForConfirms();
