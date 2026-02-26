@@ -2,12 +2,23 @@ import fs from "node:fs";
 import path from "node:path";
 import * as grpc from "@grpc/grpc-js";
 import * as protoLoader from "@grpc/proto-loader";
+import { trace } from "@opentelemetry/api";
 import { AppConfig } from "../../config/config";
 import { PlaceOrderUseCase } from "../../application/place-order-use-case";
 import { CancelOrderUseCase } from "../../application/CancelOrderUseCase";
 import { GetPickListQuery } from "../../application/GetPickListQuery";
 import { FulfillmentOrderRepositoryPort } from "../../application/ports";
 import { OrderId } from "../../domain/value-objects";
+
+function setCorrelationIdFromMetadata(call: { metadata?: grpc.Metadata }): void {
+  const raw = call.metadata?.get("x-correlation-id");
+  const val = Array.isArray(raw) ? raw[0] : raw;
+  const correlationId = typeof val === "string" && val.trim() ? val.trim() : undefined;
+  if (correlationId) {
+    const span = trace.getActiveSpan();
+    if (span) span.setAttribute("correlation_id", correlationId);
+  }
+}
 
 function resolveProtosDir(): string {
   const candidates = [
@@ -52,6 +63,7 @@ export class FulfillmentGrpcServer {
     const server = new grpc.Server();
     server.addService(svc.service, {
       PlaceOrder: async (call: any, cb: any) => {
+        setCorrelationIdFromMetadata(call);
         try {
           await this.placeOrderUseCase.execute({
             orderId: String(call.request?.orderId ?? ""),
@@ -71,6 +83,7 @@ export class FulfillmentGrpcServer {
         }
       },
       GetOrder: async (call: any, cb: any) => {
+        setCorrelationIdFromMetadata(call);
         try {
           const orderId = String(call.request?.orderId ?? "");
           const order = await this.repo.getById(OrderId.of(orderId));
@@ -87,6 +100,7 @@ export class FulfillmentGrpcServer {
         }
       },
       CancelOrder: async (call: any, cb: any) => {
+        setCorrelationIdFromMetadata(call);
         try {
           const orderId = String(call.request?.orderId ?? "");
           await this.cancelOrderUseCase.execute({ orderId });
@@ -98,6 +112,7 @@ export class FulfillmentGrpcServer {
         }
       },
       GetPickList: async (call: any, cb: any) => {
+        setCorrelationIdFromMetadata(call);
         try {
           const orderId = String(call.request?.orderId ?? "");
           const out = await this.getPickListQuery.execute({ orderId });

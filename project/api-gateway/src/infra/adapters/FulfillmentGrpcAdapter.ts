@@ -5,25 +5,41 @@ import {
   PlaceOrderInput
 } from "../../application/ports/FulfillmentServicePort";
 import { grpcUnary, loadGrpcPackages } from "./grpc/proto";
+import * as grpc from "@grpc/grpc-js";
+
+function makeMetadata(opts?: { correlationId?: string }): grpc.Metadata | undefined {
+  if (!opts?.correlationId) return undefined;
+  const m = new grpc.Metadata();
+  m.add("x-correlation-id", opts.correlationId);
+  return m;
+}
 
 export class FulfillmentGrpcAdapter implements FulfillmentServicePort {
   private readonly client: any;
 
   constructor(private readonly address: string) {
-    const { grpc, fulfillment } = loadGrpcPackages();
+    const { grpc: g, fulfillment } = loadGrpcPackages();
     this.client = new fulfillment.FulfillmentService(
       address,
-      grpc.credentials.createInsecure()
+      g.credentials.createInsecure()
     );
   }
 
-  async placeOrder(input: PlaceOrderInput): Promise<void> {
-    await grpcUnary<any, any>(this.client.PlaceOrder.bind(this.client), input);
+  async placeOrder(input: PlaceOrderInput, opts?: { correlationId?: string }): Promise<void> {
+    await grpcUnary<any, any>(
+      this.client.PlaceOrder.bind(this.client),
+      input,
+      makeMetadata(opts)
+    );
   }
 
-  async getOrder(orderId: string): Promise<FulfillmentOrderView | null> {
+  async getOrder(orderId: string, opts?: { correlationId?: string }): Promise<FulfillmentOrderView | null> {
     try {
-      const res = await grpcUnary<any, any>(this.client.GetOrder.bind(this.client), { orderId });
+      const res = await grpcUnary<any, any>(
+        this.client.GetOrder.bind(this.client),
+        { orderId },
+        makeMetadata(opts)
+      );
       const view = res as FulfillmentOrderView;
       return {
         ...view,
@@ -35,13 +51,21 @@ export class FulfillmentGrpcAdapter implements FulfillmentServicePort {
     }
   }
 
-  async cancelOrder(orderId: string): Promise<void> {
-    await grpcUnary<any, any>(this.client.CancelOrder.bind(this.client), { orderId });
+  async cancelOrder(orderId: string, opts?: { correlationId?: string }): Promise<void> {
+    await grpcUnary<any, any>(
+      this.client.CancelOrder.bind(this.client),
+      { orderId },
+      makeMetadata(opts)
+    );
   }
 
-  async getPickList(orderId: string): Promise<PickList | null> {
+  async getPickList(orderId: string, opts?: { correlationId?: string }): Promise<PickList | null> {
     try {
-      const res = await grpcUnary<any, any>(this.client.GetPickList.bind(this.client), { orderId });
+      const res = await grpcUnary<any, any>(
+        this.client.GetPickList.bind(this.client),
+        { orderId },
+        makeMetadata(opts)
+      );
       return res as PickList;
     } catch (err: any) {
       if (err?.code === 5) return null;

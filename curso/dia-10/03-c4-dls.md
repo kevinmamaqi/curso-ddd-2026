@@ -82,8 +82,6 @@ workspace "Curso DDD Hex Node" "C4 del proyecto del curso" {
 }
 ```
 
-Opcional (si quieres renderizarlo): usa Structurizr CLI desde local/CI. La clave del curso no es la herramienta, es que el diagrama sea **versionado** y revisable junto al código.
-
 ## Módulo 15 — Estandarización de desarrollos, conclusiones y revisión de proyectos
 
 ### 15.1 Introducción al concepto de estandarización de desarrollos

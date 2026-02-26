@@ -46,14 +46,17 @@ export function loadGrpcPackages(): {
 }
 
 export function grpcUnary<TReq, TRes>(
-  fn: (req: TReq, cb: (err: any, res: TRes) => void) => void,
-  req: TReq
+  fn: (req: TReq, metadata: grpc.Metadata, cb: (err: any, res: TRes) => void) => void,
+  req: TReq,
+  metadata?: grpc.Metadata
 ): Promise<TRes> {
   return new Promise((resolve, reject) => {
-    fn(req, (err, res) => {
+    const cb = (err: any, res: TRes) => {
       if (err) return reject(err);
       resolve(res);
-    });
+    };
+    const meta = metadata ?? new grpc.Metadata();
+    fn(req, meta, cb);
   });
 }
 
