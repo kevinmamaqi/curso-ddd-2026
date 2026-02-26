@@ -14,4 +14,4 @@ Llegamos a una arquitectura con:
 - `order-fulfillment-service` publicando `ReserveStockRequested` (Outbox) y consumiendo resultados (Inbox).
 - `inventory-service` consumiendo `ReserveStockRequested` (Inbox), reservando stock y publicando `StockReserved` / `StockReservationRejected` (Outbox).
 
-En esta sesión (día 10) el foco es **operación**: observabilidad end‑to‑end + dashboards accionables + documentación de arquitectura (C4/ADRs) para poder revisar el proyecto con una Definition of Done clara.
+En esta sesión (día 10) el foco es **operación**: observabilidad + dashboards + documentación de arquitectura (C4/ADRs).
